@@ -30,7 +30,7 @@ first real request isn't stuck downloading a ~250MB model.
 
 ## How it works
 
-1. `POST /process` accepts a video upload.
+1. `POST /process` accepts a video upload, reserves the free-tier quota, and returns a job id instantly; a single background worker processes jobs one at a time (two concurrent Whisper+ffmpeg runs would OOM a 512MB instance) while the front-end polls `GET /job/{id}` for queued/processing/done/failed. The site stays fully responsive during the minutes-long processing and long uploads can't die at a gateway timeout.
 2. `pipeline_lib.transcribe()` runs self-hosted faster-whisper (small model, CPU, int8) — no API key, no per-minute cost.
 3. `score_candidates()` scores every transcript segment by real audio loudness (`ffmpeg astats`) plus cheap text signals (punctuation, contrast words, punchy short words) — no LLM call.
 4. `pick_top_n()` selects the top 3 non-overlapping segments.
