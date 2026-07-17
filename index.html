@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ClipAI — Free AI Video Clipper</title>
+<title>ClipAI — Free AI Video Clipper: Turn Long Videos Into Short Clips</title>
+<meta name="description" content="Upload a video and get the best moments back as vertical, auto-captioned short clips for TikTok, Reels and Shorts. Free to try — no sign-up, no editing skills needed." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="ClipAI — Free AI Video Clipper" />
+<meta property="og:description" content="Turn long videos into short, captioned, ready-to-post clips automatically. Free to try — no sign-up." />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="ClipAI — Free AI Video Clipper" />
+<meta name="twitter:description" content="Turn long videos into short, captioned, ready-to-post clips automatically. Free to try." />
 <style>
   :root {
     --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
@@ -15,7 +23,7 @@
   header { text-align: center; padding: 56px 0 20px; }
   .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; }
   h1 { font-size: 2.2rem; margin: 10px 0 12px; letter-spacing: -0.02em; }
-  header p { color: var(--muted); max-width: 520px; margin: 0 auto; }
+  header p.tagline { color: var(--muted); max-width: 520px; margin: 0 auto; }
 
   .drop-zone {
     margin: 36px 0 12px; border: 2px dashed var(--border); border-radius: var(--radius);
@@ -23,6 +31,7 @@
     transition: border-color 0.15s ease, background 0.15s ease;
   }
   .drop-zone.drag { border-color: var(--accent); background: #f1ecff; }
+  .drop-zone.busy { pointer-events: none; opacity: 0.6; }
   .drop-zone p { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
   .drop-zone .icon { font-size: 2rem; }
   input[type=file] { display: none; }
@@ -34,16 +43,18 @@
     border-radius: 999px; padding: 12px 32px; font-weight: 700; font-size: 0.95rem; cursor: pointer;
   }
   button.primary:hover { background: var(--accent-dark); }
-  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
   #status { text-align: center; margin: 20px 0; color: var(--muted); font-size: 0.9rem; min-height: 20px; }
+  .progress-track { max-width: 420px; margin: 0 auto 8px; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; display: none; }
+  .progress-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 999px; transition: width 0.6s ease; }
 
-  .clips { display: grid; gap: 16px; margin: 30px 0 70px; }
+  .clips { display: grid; gap: 16px; margin: 30px 0 40px; }
   .clip-card {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 20px 22px; display: flex; gap: 16px; align-items: center; justify-content: space-between;
+    padding: 20px 22px; display: flex; gap: 18px; align-items: center;
   }
-  .clip-card .meta { flex: 1; }
+  .clip-card video { width: 110px; border-radius: 10px; background: #000; flex-shrink: 0; }
+  .clip-card .meta { flex: 1; min-width: 0; }
   .clip-card .rank { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
   .clip-card p { margin: 4px 0 0; font-size: 0.9rem; color: var(--ink); }
   .clip-card .score { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
@@ -51,6 +62,7 @@
     background: var(--ink); color: #fff; text-decoration: none; padding: 8px 16px;
     border-radius: 999px; font-size: 0.85rem; font-weight: 700; white-space: nowrap;
   }
+  @media (max-width: 560px) { .clip-card { flex-wrap: wrap; } }
 
   .paywall { text-align: center; padding: 30px; background: #fff4e6; border: 1px dashed var(--accent); border-radius: var(--radius); margin: 20px 0 30px; }
   .paywall h3 { margin-top: 0; }
@@ -58,26 +70,41 @@
 
   .pro-badge { display: inline-block; background: #1f9d55; color: #fff; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 10px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
 
-  .ad-slot { margin: 20px 0 60px; padding: 16px; border: 1px dashed var(--border); border-radius: 10px; text-align: center; color: var(--muted); font-size: 0.8rem; background: var(--card); }
+  .ad-slot { margin: 20px 0 40px; padding: 16px; border: 1px dashed var(--border); border-radius: 10px; text-align: center; color: var(--muted); font-size: 0.8rem; background: var(--card); }
+
+  section.content { margin: 60px 0; }
+  section.content h2 { font-size: 1.4rem; margin-bottom: 18px; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .step .num { font-weight: 800; color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .step h3 { margin: 8px 0 6px; font-size: 1rem; }
+  .step p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; }
+  details summary { font-weight: 600; cursor: pointer; }
+  details p { color: var(--muted); font-size: 0.92rem; margin: 10px 0 0; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 30px 0 50px; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <p class="eyebrow">Free AI Video Clipper<span class="pro-badge" id="proBadge" style="display:none">Pro</span></p>
-      <h1>ClipAI</h1>
-      <p>Upload a video, get back the best short clips — auto-picked, auto-captioned, ready to post. First clip's free.</p>
+      <h1>Turn long videos into short, ready-to-post clips</h1>
+      <p class="tagline">Upload once — ClipAI finds the best moments, cuts them vertical, and burns in captions automatically. No sign-up, no editing skills. First video free.</p>
     </header>
 
     <div class="drop-zone" id="dropZone">
       <div class="icon">🎬</div>
       <strong>Drop a video here or click to upload</strong>
-      <p>MP4, MOV — up to a few minutes for the free plan</p>
+      <p>MP4, MOV, WEBM, MKV — up to a few minutes long works best on the free plan</p>
       <input type="file" id="fileInput" accept="video/*" />
     </div>
     <p class="usage-note" id="usageNote">Checking your free plan usage…</p>
 
-    <div id="status"></div>
+    <div class="progress-track" id="progressTrack"><div class="progress-bar" id="progressBar"></div></div>
+    <div id="status" role="status"></div>
     <div class="clips" id="clips"></div>
     <div class="paywall" id="paywall" style="display:none">
       <h3>Free plan used up</h3>
@@ -85,7 +112,50 @@
       <button class="primary" id="upgradeBtn">Upgrade to Pro — $15/mo</button>
     </div>
     <div class="ad-slot" id="adSlot">Ad space (free plan)</div>
+
+    <section class="content">
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="num">Step 1</div>
+          <h3>Upload your video</h3>
+          <p>A podcast episode, a talk, a stream VOD, a lecture — anything with speech.</p>
+        </div>
+        <div class="step">
+          <div class="num">Step 2</div>
+          <h3>AI finds the moments</h3>
+          <p>ClipAI transcribes the audio and scores every segment by energy and punchiness to surface the highlights.</p>
+        </div>
+        <div class="step">
+          <div class="num">Step 3</div>
+          <h3>Download &amp; post</h3>
+          <p>Each clip comes back vertical (9:16) with bold word-by-word captions — ready for TikTok, Reels, and Shorts.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="content">
+      <h2>Frequently asked questions</h2>
+      <details>
+        <summary>Is it really free?</summary>
+        <p>Yes — your first video is free, no account or card needed. Pro ($15/mo) removes the limit and the watermark.</p>
+      </details>
+      <details>
+        <summary>How long does it take?</summary>
+        <p>A few minutes per video. Your video enters a queue and the page updates live — you can leave it open and come back.</p>
+      </details>
+      <details>
+        <summary>What happens to my video?</summary>
+        <p>It's processed automatically and deleted from our servers within 24 hours. Nothing is used for anything except making your clips.</p>
+      </details>
+      <details>
+        <summary>What videos work best?</summary>
+        <p>Talking content with clear speech: podcasts, interviews, talks, streams, sermons, lectures. Music-only or silent footage won't produce good clips.</p>
+      </details>
+    </section>
   </div>
+
+  <footer>ClipAI — automatic short clips from long videos.</footer>
 
   <script>
     const dropZone = document.getElementById('dropZone');
@@ -97,23 +167,31 @@
     const proBadge = document.getElementById('proBadge');
     const adSlot = document.getElementById('adSlot');
     const upgradeBtn = document.getElementById('upgradeBtn');
+    const progressTrack = document.getElementById('progressTrack');
+    const progressBar = document.getElementById('progressBar');
+
+    const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
 
     async function refreshUsage() {
-      const res = await fetch('/usage');
-      const data = await res.json();
-      if (data.pro) {
-        usageNote.textContent = 'Pro plan — unlimited videos';
-        proBadge.style.display = 'inline-block';
-        adSlot.style.display = 'none';
-        paywall.style.display = 'none';
-      } else {
-        usageNote.textContent = data.remaining > 0
-          ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
-          : `Free plan used up (${data.limit}/${data.limit})`;
-        proBadge.style.display = 'none';
-        adSlot.style.display = 'block';
+      try {
+        const res = await fetch('/usage');
+        const data = await res.json();
+        if (data.pro) {
+          usageNote.textContent = 'Pro plan — unlimited videos';
+          proBadge.style.display = 'inline-block';
+          adSlot.style.display = 'none';
+          paywall.style.display = 'none';
+        } else {
+          usageNote.textContent = data.remaining > 0
+            ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
+            : `Free plan used up (${data.limit}/${data.limit})`;
+          proBadge.style.display = 'none';
+          adSlot.style.display = 'block';
+        }
+        return data;
+      } catch (e) {
+        usageNote.textContent = '';
       }
-      return data;
     }
 
     upgradeBtn.addEventListener('click', () => {
@@ -132,31 +210,27 @@
       if (fileInput.files.length) handleFile(fileInput.files[0]);
     });
 
-    let statusTimer = null;
-
-    function setProcessingStatus(startedAt) {
-      clearInterval(statusTimer);
-      statusTimer = setInterval(() => {
-        const elapsed = Math.round((Date.now() - startedAt) / 1000);
-        statusEl.textContent = `Uploading and processing… (${elapsed}s so far — this can take several minutes on the free plan, hang tight)`;
-      }, 1000);
+    function setBusy(busy) {
+      dropZone.classList.toggle('busy', busy);
+      progressTrack.style.display = busy ? 'block' : 'none';
+      if (!busy) progressBar.style.width = '0%';
     }
 
     async function handleFile(file) {
       clipsEl.innerHTML = '';
       paywall.style.display = 'none';
-      dropZone.style.pointerEvents = 'none';
-      dropZone.style.opacity = '0.6';
-      setProcessingStatus(Date.now());
+      setBusy(true);
+      statusEl.textContent = `Uploading ${file.name}…`;
 
       const formData = new FormData();
       formData.append('file', file);
 
+      let jobId;
       try {
         const res = await fetch('/process', { method: 'POST', body: formData });
-        clearInterval(statusTimer);
         if (res.status === 402) {
           statusEl.textContent = '';
+          setBusy(false);
           paywall.style.display = 'block';
           await refreshUsage();
           return;
@@ -164,20 +238,72 @@
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           statusEl.textContent = `Error: ${err.detail || res.statusText}`;
+          setBusy(false);
           return;
         }
         const data = await res.json();
-        statusEl.textContent = `Done — ${data.clips.length} clips generated from a ${data.duration.toFixed(0)}s video.`;
-        renderClips(data.clips);
-        await refreshUsage();
+        jobId = data.job_id;
       } catch (e) {
-        clearInterval(statusTimer);
         statusEl.textContent = 'Upload failed — check your connection and try again.';
+        setBusy(false);
+        return;
       } finally {
-        dropZone.style.pointerEvents = '';
-        dropZone.style.opacity = '';
         fileInput.value = '';
       }
+
+      pollJob(jobId, Date.now());
+    }
+
+    async function pollJob(jobId, startedAt) {
+      let stopped = false;
+      const tick = async () => {
+        if (stopped) return;
+        let data;
+        try {
+          const res = await fetch(`/job/${jobId}`);
+          if (res.status === 404) {
+            // the server restarted and lost the in-memory job — don't spin forever
+            stopped = true;
+            statusEl.textContent = 'Sorry — the server restarted mid-job and your video was lost. Your free video was not used up; please try again.';
+            setBusy(false);
+            await refreshUsage();
+            return;
+          }
+          if (!res.ok) throw new Error('bad status');
+          data = await res.json();
+        } catch (e) {
+          // transient network hiccup or free-tier instance waking — keep trying
+          setTimeout(tick, 5000);
+          return;
+        }
+
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        progressBar.style.width = Math.min(95, (elapsed / EXPECTED_SECONDS) * 100) + '%';
+
+        if (data.status === 'queued') {
+          const pos = data.queue_position;
+          statusEl.textContent = pos && pos > 1
+            ? `In queue (position ${pos})… you can leave this page open.`
+            : 'In queue… starting soon.';
+          setTimeout(tick, 3000);
+        } else if (data.status === 'processing') {
+          statusEl.textContent = `Finding your best moments… (${elapsed}s — typically a few minutes, hang tight)`;
+          setTimeout(tick, 3000);
+        } else if (data.status === 'done') {
+          stopped = true;
+          progressBar.style.width = '100%';
+          statusEl.textContent = `Done — ${data.clips.length} clips from your ${Math.round(data.duration)}s video.`;
+          renderClips(data.clips);
+          setBusy(false);
+          await refreshUsage();
+        } else if (data.status === 'failed') {
+          stopped = true;
+          statusEl.textContent = data.error || 'Processing failed.';
+          setBusy(false);
+          await refreshUsage();
+        }
+      };
+      tick();
     }
 
     function escapeHtml(str) {
@@ -189,10 +315,11 @@
     function renderClips(clips) {
       clipsEl.innerHTML = clips.map(c => `
         <div class="clip-card">
+          <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
-            <div class="rank">Clip #${c.rank} · score ${c.score}</div>
+            <div class="rank">Clip #${c.rank}</div>
             <p>"${escapeHtml(c.text)}"</p>
-            <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
+            <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s · highlight score ${c.score}</div>
           </div>
           <a class="download" href="${encodeURI(c.url)}" download>Download</a>
         </div>
