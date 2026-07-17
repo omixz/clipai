@@ -104,7 +104,7 @@ def build_word_chunk_srt(words, clip_start, chunk_size=4):
     return "\n".join(lines)
 
 
-def render_clip(video_path, seg, out_dir, rank):
+def render_clip(video_path, seg, out_dir, rank, watermark=True):
     srt_text = build_word_chunk_srt(seg["words"], seg["start"])
     srt_path = os.path.join(out_dir, f"clip_{rank}.srt")
     with open(srt_path, "w") as f:
@@ -115,10 +115,13 @@ def render_clip(video_path, seg, out_dir, rank):
         "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e,"
         f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"
         "PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,"
-        "Bold=1,Alignment=2,MarginV=140',"
-        f"drawtext=text='{WATERMARK}':fontcolor=white@0.6:fontsize=18:"
-        "x=(w-text_w)/2:y=h-70"
+        "Bold=1,Alignment=2,MarginV=140'"
     )
+    if watermark:
+        vf += (
+            f",drawtext=text='{WATERMARK}':fontcolor=white@0.6:fontsize=18:"
+            "x=(w-text_w)/2:y=h-70"
+        )
     cmd = [
         "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
         "-i", video_path, "-vf", vf,
@@ -129,7 +132,7 @@ def render_clip(video_path, seg, out_dir, rank):
     return out_path, result.returncode == 0, result.stderr[-800:]
 
 
-def process_video(video_path, out_dir, n_clips=3):
+def process_video(video_path, out_dir, n_clips=3, watermark=True):
     os.makedirs(out_dir, exist_ok=True)
     segments, duration = transcribe(video_path)
     scored = score_candidates(video_path, segments)
@@ -137,7 +140,7 @@ def process_video(video_path, out_dir, n_clips=3):
 
     manifest = []
     for i, seg in enumerate(top, 1):
-        out_path, ok, err = render_clip(video_path, seg, out_dir, i)
+        out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark)
         manifest.append({
             "rank": i, "start": seg["start"], "end": seg["end"],
             "score": seg["composite"], "text": seg["text"],

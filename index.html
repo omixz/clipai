@@ -199,6 +199,15 @@
       `).join('');
     }
 
+    const params = new URLSearchParams(location.search);
+    if (params.get('upgraded') === '1') {
+      statusEl.textContent = '🎉 Pro activated — unlimited videos, no watermark. Thanks for upgrading!';
+      history.replaceState(null, '', '/');
+    } else if (params.get('upgrade_error') === '1') {
+      statusEl.textContent = "Something went wrong confirming your upgrade — if you were charged, contact support and we'll sort it out.";
+      history.replaceState(null, '', '/');
+    }
+
     refreshUsage();
   </script>
 </body>

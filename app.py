@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import time
 import uuid
 from pathlib import Path
 
@@ -46,6 +47,22 @@ def get_client_record(usage_data, cid):
     return usage_data.get(cid, {"used": 0})
 
 
+JOB_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def cleanup_old_jobs():
+    """Job dirs hold the uploaded video plus rendered clips and are never
+    referenced again after a day — without pruning they accumulate until the
+    instance disk fills and every upload starts failing."""
+    now = time.time()
+    try:
+        for job_dir in JOBS_DIR.iterdir():
+            if job_dir.is_dir() and now - job_dir.stat().st_mtime > JOB_MAX_AGE_SECONDS:
+                shutil.rmtree(job_dir, ignore_errors=True)
+    except Exception:
+        log.exception("job cleanup failed")
+
+
 def check_pro_status(request: Request) -> bool:
     """Pro status is checked live against Stripe via a customer ID cookie set
     after a successful checkout — NOT read from local storage. Render's free
@@ -75,12 +92,26 @@ def usage(request: Request):
     rec = get_client_record(load_usage(), cid)
     is_pro = check_pro_status(request)
     remaining = None if is_pro else max(0, config.FREE_LIMIT - rec["used"])
-    return {"client_id": cid, "used": rec["used"], "pro": is_pro,
-             "limit": config.FREE_LIMIT, "remaining": remaining}
+    resp = JSONResponse({"client_id": cid, "used": rec["used"], "pro": is_pro,
+                          "limit": config.FREE_LIMIT, "remaining": remaining})
+    # Pin the visitor's identity on first page load, not only after their first
+    # upload — otherwise every request before that runs as a fresh anonymous
+    # user and the free cap is trivially dodged.
+    resp.set_cookie("clipai_cid", cid, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
+    return resp
+
+
+def refund_free_use(cid):
+    usage_data = load_usage()
+    rec = get_client_record(usage_data, cid)
+    rec["used"] = max(0, rec["used"] - 1)
+    usage_data[cid] = rec
+    save_usage(usage_data)
 
 
 @app.post("/process")
 async def process(request: Request, file: UploadFile = File(...)):
+    cleanup_old_jobs()
     cid = get_client_id(request)
     usage_data = load_usage()
     rec = get_client_record(usage_data, cid)
@@ -92,6 +123,15 @@ async def process(request: Request, file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in config.ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'. Use MP4, MOV, M4V, WEBM, or MKV.")
+
+    # Reserve the free-tier use BEFORE the (minutes-long) processing runs and
+    # refund it on failure. Counting only after completion let a free user fire
+    # several parallel uploads that all passed the limit check before any of
+    # them finished.
+    if not is_pro:
+        rec["used"] += 1
+        usage_data[cid] = rec
+        save_usage(usage_data)
 
     job_id = str(uuid.uuid4())[:8]
     job_dir = JOBS_DIR / job_id
@@ -109,31 +149,34 @@ async def process(request: Request, file: UploadFile = File(...)):
                 f.write(chunk)
     except HTTPException:
         shutil.rmtree(job_dir, ignore_errors=True)
+        if not is_pro:
+            refund_free_use(cid)
         raise
     except Exception as e:
         shutil.rmtree(job_dir, ignore_errors=True)
+        if not is_pro:
+            refund_free_use(cid)
         log.exception("upload failed")
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
     try:
-        result = pipeline_lib.process_video(str(input_path), str(job_dir), n_clips=3)
+        result = pipeline_lib.process_video(str(input_path), str(job_dir), n_clips=3, watermark=not is_pro)
     except Exception as e:
         log.exception("processing failed for job %s", job_id)
         shutil.rmtree(job_dir, ignore_errors=True)
+        if not is_pro:
+            refund_free_use(cid)
         raise HTTPException(status_code=500, detail="Processing failed — the video may be too short, silent, or an unsupported codec.")
 
     if not result["clips"]:
+        if not is_pro:
+            refund_free_use(cid)
         raise HTTPException(status_code=422, detail="Couldn't find any usable clips in that video — try a longer or louder source.")
-
-    if not is_pro:
-        rec["used"] += 1
-        usage_data[cid] = rec
-        save_usage(usage_data)
 
     for clip in result["clips"]:
         clip["url"] = f"/jobs/{job_id}/{clip['file']}"
 
-    remaining = None if is_pro else max(0, config.FREE_LIMIT - rec["used"])
+    remaining = None if is_pro else max(0, config.FREE_LIMIT - load_usage().get(cid, {"used": 0})["used"])
     resp = JSONResponse({"job_id": job_id, "duration": result["duration"], "clips": result["clips"],
                           "pro": is_pro, "remaining_free": remaining})
     resp.set_cookie("clipai_cid", cid, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
