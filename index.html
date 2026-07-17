@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClipAI — Free AI Video Clipper</title>
+<style>
+  :root {
+    --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
+    --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.55; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 56px 0 20px; }
+  .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; }
+  h1 { font-size: 2.2rem; margin: 10px 0 12px; letter-spacing: -0.02em; }
+  header p { color: var(--muted); max-width: 520px; margin: 0 auto; }
+
+  .drop-zone {
+    margin: 36px 0 12px; border: 2px dashed var(--border); border-radius: var(--radius);
+    background: var(--card); padding: 50px 20px; text-align: center; cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .drop-zone.drag { border-color: var(--accent); background: #f1ecff; }
+  .drop-zone p { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+  .drop-zone .icon { font-size: 2rem; }
+  input[type=file] { display: none; }
+
+  .usage-note { text-align: center; color: var(--muted); font-size: 0.85rem; margin-bottom: 30px; }
+
+  button.primary {
+    display: block; margin: 0 auto; background: var(--accent); color: #fff; border: none;
+    border-radius: 999px; padding: 12px 32px; font-weight: 700; font-size: 0.95rem; cursor: pointer;
+  }
+  button.primary:hover { background: var(--accent-dark); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  #status { text-align: center; margin: 20px 0; color: var(--muted); font-size: 0.9rem; min-height: 20px; }
+
+  .clips { display: grid; gap: 16px; margin: 30px 0 70px; }
+  .clip-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 22px; display: flex; gap: 16px; align-items: center; justify-content: space-between;
+  }
+  .clip-card .meta { flex: 1; }
+  .clip-card .rank { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
+  .clip-card p { margin: 4px 0 0; font-size: 0.9rem; color: var(--ink); }
+  .clip-card .score { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+  .clip-card a.download {
+    background: var(--ink); color: #fff; text-decoration: none; padding: 8px 16px;
+    border-radius: 999px; font-size: 0.85rem; font-weight: 700; white-space: nowrap;
+  }
+
+  .paywall { text-align: center; padding: 30px; background: #fff4e6; border: 1px dashed var(--accent); border-radius: var(--radius); margin: 20px 0 30px; }
+  .paywall h3 { margin-top: 0; }
+  .paywall button.primary { margin-top: 14px; }
+
+  .pro-badge { display: inline-block; background: #1f9d55; color: #fff; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 10px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+
+  .ad-slot { margin: 20px 0 60px; padding: 16px; border: 1px dashed var(--border); border-radius: 10px; text-align: center; color: var(--muted); font-size: 0.8rem; background: var(--card); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <p class="eyebrow">Free AI Video Clipper<span class="pro-badge" id="proBadge" style="display:none">Pro</span></p>
+      <h1>ClipAI</h1>
+      <p>Upload a video, get back the best short clips — auto-picked, auto-captioned, ready to post. First clip's free.</p>
+    </header>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="icon">🎬</div>
+      <strong>Drop a video here or click to upload</strong>
+      <p>MP4, MOV — up to a few minutes for the free plan</p>
+      <input type="file" id="fileInput" accept="video/*" />
+    </div>
+    <p class="usage-note" id="usageNote">Checking your free plan usage…</p>
+
+    <div id="status"></div>
+    <div class="clips" id="clips"></div>
+    <div class="paywall" id="paywall" style="display:none">
+      <h3>Free plan used up</h3>
+      <p>You've used your 1 free clip run. Upgrade to Pro for unlimited videos — no per-video limit, no watermark.</p>
+      <button class="primary" id="upgradeBtn">Upgrade to Pro — $15/mo</button>
+    </div>
+    <div class="ad-slot" id="adSlot">Ad space (free plan) — activates once AdSense is connected, see config.py</div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const statusEl = document.getElementById('status');
+    const clipsEl = document.getElementById('clips');
+    const usageNote = document.getElementById('usageNote');
+    const paywall = document.getElementById('paywall');
+    const proBadge = document.getElementById('proBadge');
+    const adSlot = document.getElementById('adSlot');
+    const upgradeBtn = document.getElementById('upgradeBtn');
+
+    async function refreshUsage() {
+      const res = await fetch('/usage');
+      const data = await res.json();
+      if (data.pro) {
+        usageNote.textContent = 'Pro plan — unlimited videos';
+        proBadge.style.display = 'inline-block';
+        adSlot.style.display = 'none';
+        paywall.style.display = 'none';
+      } else {
+        usageNote.textContent = data.remaining > 0
+          ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
+          : `Free plan used up (${data.limit}/${data.limit})`;
+        proBadge.style.display = 'none';
+        adSlot.style.display = 'block';
+      }
+      return data;
+    }
+
+    upgradeBtn.addEventListener('click', () => {
+      window.location.href = '/create-checkout-session';
+    });
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    async function handleFile(file) {
+      clipsEl.innerHTML = '';
+      paywall.style.display = 'none';
+      statusEl.textContent = `Uploading ${file.name}…`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/process', { method: 'POST', body: formData });
+        if (res.status === 402) {
+          statusEl.textContent = '';
+          paywall.style.display = 'block';
+          await refreshUsage();
+          return;
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          statusEl.textContent = `Error: ${err.detail || res.statusText}`;
+          return;
+        }
+        const data = await res.json();
+        statusEl.textContent = `Done — ${data.clips.length} clips generated from a ${data.duration.toFixed(0)}s video.`;
+        renderClips(data.clips);
+        await refreshUsage();
+      } catch (e) {
+        statusEl.textContent = 'Upload failed — check your connection and try again.';
+      }
+    }
+
+    function renderClips(clips) {
+      clipsEl.innerHTML = clips.map(c => `
+        <div class="clip-card">
+          <div class="meta">
+            <div class="rank">Clip #${c.rank} · score ${c.score}</div>
+            <p>"${c.text}"</p>
+            <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
+          </div>
+          <a class="download" href="${c.url}" download>Download</a>
+        </div>
+      `).join('');
+    }
+
+    refreshUsage();
+  </script>
+</body>
+</html>
