@@ -5,6 +5,7 @@ import os
 from faster_whisper import WhisperModel
 
 WATERMARK = "FREE PLAN — clipai.app"
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny")
 
 _model = None
 
@@ -12,7 +13,7 @@ _model = None
 def get_model():
     global _model
     if _model is None:
-        _model = WhisperModel("small", device="cpu", compute_type="int8")
+        _model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
     return _model
 
 
