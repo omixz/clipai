@@ -84,7 +84,7 @@
       <p>You've used your 1 free clip run. Upgrade to Pro for unlimited videos — no per-video limit, no watermark.</p>
       <button class="primary" id="upgradeBtn">Upgrade to Pro — $15/mo</button>
     </div>
-    <div class="ad-slot" id="adSlot">Ad space (free plan) — activates once AdSense is connected, see config.py</div>
+    <div class="ad-slot" id="adSlot">Ad space (free plan)</div>
   </div>
 
   <script>
@@ -132,16 +132,29 @@
       if (fileInput.files.length) handleFile(fileInput.files[0]);
     });
 
+    let statusTimer = null;
+
+    function setProcessingStatus(startedAt) {
+      clearInterval(statusTimer);
+      statusTimer = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        statusEl.textContent = `Uploading and processing… (${elapsed}s so far — this can take several minutes on the free plan, hang tight)`;
+      }, 1000);
+    }
+
     async function handleFile(file) {
       clipsEl.innerHTML = '';
       paywall.style.display = 'none';
-      statusEl.textContent = `Uploading ${file.name}…`;
+      dropZone.style.pointerEvents = 'none';
+      dropZone.style.opacity = '0.6';
+      setProcessingStatus(Date.now());
 
       const formData = new FormData();
       formData.append('file', file);
 
       try {
         const res = await fetch('/process', { method: 'POST', body: formData });
+        clearInterval(statusTimer);
         if (res.status === 402) {
           statusEl.textContent = '';
           paywall.style.display = 'block';
@@ -158,8 +171,19 @@
         renderClips(data.clips);
         await refreshUsage();
       } catch (e) {
+        clearInterval(statusTimer);
         statusEl.textContent = 'Upload failed — check your connection and try again.';
+      } finally {
+        dropZone.style.pointerEvents = '';
+        dropZone.style.opacity = '';
+        fileInput.value = '';
       }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
     }
 
     function renderClips(clips) {
@@ -167,10 +191,10 @@
         <div class="clip-card">
           <div class="meta">
             <div class="rank">Clip #${c.rank} · score ${c.score}</div>
-            <p>"${c.text}"</p>
+            <p>"${escapeHtml(c.text)}"</p>
             <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
           </div>
-          <a class="download" href="${c.url}" download>Download</a>
+          <a class="download" href="${encodeURI(c.url)}" download>Download</a>
         </div>
       `).join('');
     }
