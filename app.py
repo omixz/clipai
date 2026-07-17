@@ -41,7 +41,27 @@ def get_client_id(request: Request) -> str:
 
 
 def get_client_record(usage_data, cid):
-    return usage_data.get(cid, {"used": 0, "pro": False})
+    # NOTE: usage.json only tracks the free-tier counter now — see check_pro_status
+    # for why "pro" is never stored here.
+    return usage_data.get(cid, {"used": 0})
+
+
+def check_pro_status(request: Request) -> bool:
+    """Pro status is checked live against Stripe via a customer ID cookie set
+    after a successful checkout — NOT read from local storage. Render's free
+    tier has no persistent disk, so usage.json is wiped on every redeploy and
+    every spin-down/spin-up after idle. A paying customer's access must not
+    depend on that file surviving, or they'd silently lose Pro the next time
+    the service restarts."""
+    customer_id = request.cookies.get("clipai_customer")
+    if not customer_id:
+        return False
+    try:
+        subs = stripe.Subscription.list(customer=customer_id, status="active", limit=1)
+        return len(subs.data) > 0
+    except Exception:
+        log.exception("Stripe subscription lookup failed for customer %s", customer_id)
+        return False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -53,8 +73,9 @@ def index():
 def usage(request: Request):
     cid = get_client_id(request)
     rec = get_client_record(load_usage(), cid)
-    remaining = None if rec["pro"] else max(0, config.FREE_LIMIT - rec["used"])
-    return {"client_id": cid, "used": rec["used"], "pro": rec["pro"],
+    is_pro = check_pro_status(request)
+    remaining = None if is_pro else max(0, config.FREE_LIMIT - rec["used"])
+    return {"client_id": cid, "used": rec["used"], "pro": is_pro,
              "limit": config.FREE_LIMIT, "remaining": remaining}
 
 
@@ -63,8 +84,9 @@ async def process(request: Request, file: UploadFile = File(...)):
     cid = get_client_id(request)
     usage_data = load_usage()
     rec = get_client_record(usage_data, cid)
+    is_pro = check_pro_status(request)
 
-    if not rec["pro"] and rec["used"] >= config.FREE_LIMIT:
+    if not is_pro and rec["used"] >= config.FREE_LIMIT:
         raise HTTPException(status_code=402, detail="Free plan limit reached (1 video). Upgrade to Pro for unlimited clips.")
 
     ext = Path(file.filename or "").suffix.lower()
@@ -103,16 +125,17 @@ async def process(request: Request, file: UploadFile = File(...)):
     if not result["clips"]:
         raise HTTPException(status_code=422, detail="Couldn't find any usable clips in that video — try a longer or louder source.")
 
-    rec["used"] += 1
-    usage_data[cid] = rec
-    save_usage(usage_data)
+    if not is_pro:
+        rec["used"] += 1
+        usage_data[cid] = rec
+        save_usage(usage_data)
 
     for clip in result["clips"]:
         clip["url"] = f"/jobs/{job_id}/{clip['file']}"
 
-    remaining = None if rec["pro"] else max(0, config.FREE_LIMIT - rec["used"])
+    remaining = None if is_pro else max(0, config.FREE_LIMIT - rec["used"])
     resp = JSONResponse({"job_id": job_id, "duration": result["duration"], "clips": result["clips"],
-                          "pro": rec["pro"], "remaining_free": remaining})
+                          "pro": is_pro, "remaining_free": remaining})
     resp.set_cookie("clipai_cid", cid, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
     return resp
 
@@ -136,7 +159,7 @@ def create_checkout_session(request: Request):
         session = stripe.checkout.Session.create(
             mode="subscription",
             line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
-            success_url=f"{config.SITE_URL}/?upgraded=1",
+            success_url=f"{config.SITE_URL}/confirm-checkout?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{config.SITE_URL}/",
             client_reference_id=cid,
         )
@@ -149,8 +172,33 @@ def create_checkout_session(request: Request):
     return resp
 
 
+@app.get("/confirm-checkout")
+def confirm_checkout(session_id: str):
+    """Stripe redirects here right after a successful checkout. We look the
+    session up (server-to-server, so this can't be spoofed by editing the URL)
+    and, if it really did complete, store the Stripe customer ID in a cookie.
+    From then on, Pro status is checked live against that customer ID — see
+    check_pro_status — so it survives restarts/redeploys without needing our
+    own database."""
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+    except Exception:
+        log.exception("failed to retrieve checkout session %s", session_id)
+        return RedirectResponse(f"{config.SITE_URL}/?upgrade_error=1", status_code=303)
+
+    resp = RedirectResponse(f"{config.SITE_URL}/?upgraded=1", status_code=303)
+    if session.payment_status in ("paid", "no_payment_required") and session.customer:
+        resp.set_cookie("clipai_customer", session.customer, max_age=60 * 60 * 24 * 365,
+                          httponly=True, samesite="lax")
+    return resp
+
+
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request):
+    """Not required for Pro status anymore (that's checked live via Stripe —
+    see check_pro_status), but Stripe still expects a webhook endpoint to
+    exist for the events you configure, and it's useful for logging/alerting
+    on cancellations."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     try:
@@ -158,26 +206,9 @@ async def stripe_webhook(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature.")
 
-    usage_data = load_usage()
-
     if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        cid = session.get("client_reference_id")
-        if cid:
-            rec = get_client_record(usage_data, cid)
-            rec["pro"] = True
-            rec["stripe_customer"] = session.get("customer")
-            usage_data[cid] = rec
-            save_usage(usage_data)
-            log.info("client %s upgraded to Pro", cid)
-
+        log.info("checkout completed for customer %s", event["data"]["object"].get("customer"))
     elif event["type"] in ("customer.subscription.deleted", "customer.subscription.paused"):
-        sub = event["data"]["object"]
-        customer_id = sub.get("customer")
-        for cid, rec in usage_data.items():
-            if rec.get("stripe_customer") == customer_id:
-                rec["pro"] = False
-                log.info("client %s downgraded from Pro", cid)
-        save_usage(usage_data)
+        log.info("subscription ended for customer %s", event["data"]["object"].get("customer"))
 
     return {"received": True}
