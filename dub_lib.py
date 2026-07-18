@@ -86,15 +86,16 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     translated, synthesized speech time-stretched to fit the clip, and
     captions burned from the translated text instead of the original."""
     translated = translate_text(seg["text"], target_lang, source_lang)
+    virality = seg.get("virality_score", 0)
 
-    raw_wav = os.path.join(out_dir, f"clip_{rank}_dub_raw.wav")
+    raw_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub_raw.wav")
     synthesize_speech(translated, target_lang, raw_wav)
 
     clip_duration = max(0.1, seg["end"] - seg["start"])
     tts_duration = _wav_duration(raw_wav)
     tempo_filter = _atempo_chain(tts_duration / clip_duration)
 
-    stretched_wav = os.path.join(out_dir, f"clip_{rank}_dub.wav")
+    stretched_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub.wav")
     subprocess.run(
         ["ffmpeg", "-y", "-i", raw_wav, "-af", tempo_filter, stretched_wav],
         capture_output=True, text=True,
@@ -105,7 +106,7 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     # Piper doesn't give us per-word timestamps the way Whisper does for the
     # original-language captions, so this is a linear approximation rather
     # than a true forced alignment.
-    srt_path = os.path.join(out_dir, f"clip_{rank}.srt")
+    srt_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.srt")
     words = translated.split()
     chunk_size = 3
     lines, idx = [], 1
@@ -120,7 +121,7 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     with open(srt_path, "w") as f:
         f.write("\n".join(lines))
 
-    out_path = os.path.join(out_dir, f"clip_{rank}.mp4")
+    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
     vf = (
         "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e,"
         f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"

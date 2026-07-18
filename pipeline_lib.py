@@ -143,11 +143,12 @@ def build_word_chunk_srt(words, clip_start, chunk_size=4, clean_fillers=True):
 
 def render_clip(video_path, seg, out_dir, rank, watermark=True):
     srt_text = build_word_chunk_srt(seg["words"], seg["start"])
-    srt_path = os.path.join(out_dir, f"clip_{rank}.srt")
+    virality = seg.get("virality_score", 0)
+    srt_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.srt")
     with open(srt_path, "w") as f:
         f.write(srt_text)
 
-    out_path = os.path.join(out_dir, f"clip_{rank}.mp4")
+    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
     vf = (
         "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e,"
         f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"
