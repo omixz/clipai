@@ -431,7 +431,9 @@
             : 'In queue… starting soon.';
           setTimeout(tick, 3000);
         } else if (data.status === 'processing') {
-          statusEl.textContent = `Finding your best moments… (${elapsed}s — typically a few minutes, hang tight)`;
+          const stage = elapsed < 30 ? 'Transcribing speech…' : elapsed < 60 ? 'Analyzing best moments…' : 'Rendering clips…';
+          const pct = Math.min(95, Math.round((elapsed / EXPECTED_SECONDS) * 100));
+          statusEl.textContent = `${stage} (${elapsed}s, ${pct}% done — typically 2–5 minutes total)`;
           setTimeout(tick, 3000);
         } else if (data.status === 'done') {
           stopped = true;
