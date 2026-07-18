@@ -100,6 +100,10 @@
   .dub-row .pro-tag { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 0.65rem; font-weight: 700; vertical-align: middle; }
   .dub-row .dub-hint { color: var(--muted); font-size: 0.75rem; margin: 4px 0 0; }
 
+  .nav-bar { display: flex; justify-content: center; gap: 24px; padding: 16px 0 20px; margin-bottom: 20px; }
+  .nav-bar a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+  .nav-bar a:hover { color: var(--ink); }
+
   button.primary {
     display: block; margin: 0 auto; background: var(--accent); color: #fff; border: none;
     border-radius: 999px; padding: 12px 32px; font-weight: 700; font-size: 0.95rem; cursor: pointer;
@@ -171,6 +175,12 @@
       <p class="tagline" id="tagline">Upload once — Peakcut finds the best moments, cuts them vertical, and burns in captions automatically. No editing skills needed. 5 free videos every month.</p>
     </header>
 
+    <div class="nav-bar">
+      <a href="/" style="color: var(--accent); font-weight: 700;">App</a>
+      <a href="/pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </div>
+
     <div class="account-bar" id="accountBar" style="display:none"></div>
 
     <div class="signin-gate" id="signinGate" style="display:none">
@@ -223,8 +233,8 @@
     <div class="clips" id="clips"></div>
     <div class="paywall" id="paywall" style="display:none">
       <h3>Free plan used up</h3>
-      <p>You've used your free video allocation for this month. Upgrade to Pro for unlimited videos — no monthly limit, no watermark.</p>
-      <button class="primary" id="upgradeBtn">Upgrade to Pro — $15/mo</button>
+      <p>You've used your free video allocation for this month. Upgrade to Pro ($15/mo) for 20 videos/month or Pro Plus ($29/mo) for 50 videos/month — both include watermark-free rendering and multi-language dubbing.</p>
+      <button class="primary" id="upgradeBtn">See plans</button>
     </div>
     <div class="ad-slot" id="adSlot"></div>
 
@@ -249,7 +259,7 @@
       </div>
     </section>
 
-    <section class="content">
+    <section class="content" id="faq">
       <h2>Frequently asked questions</h2>
       <details>
         <summary>Is it really free?</summary>
@@ -348,7 +358,7 @@
     }
 
     upgradeBtn.addEventListener('click', () => {
-      window.location.href = '/create-checkout-session';
+      window.location.href = '/pricing';
     });
 
     dropZone.addEventListener('click', () => fileInput.click());

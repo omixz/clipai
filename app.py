@@ -253,6 +253,11 @@ def index():
     return (BASE_DIR / "index.html").read_text()
 
 
+@app.get("/pricing", response_class=HTMLResponse)
+def pricing():
+    return (BASE_DIR / "pricing.html").read_text()
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy():
     return (BASE_DIR / "privacy.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
@@ -538,6 +543,31 @@ def create_checkout_session(request: Request):
         )
     except Exception:
         log.exception("stripe checkout session creation failed")
+        raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
+
+    resp = RedirectResponse(session.url, status_code=303)
+    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
+                     httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/create-checkout-session-plus")
+def create_checkout_session_plus(request: Request):
+    """Checkout for Pro Plus tier."""
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        return RedirectResponse("/auth/google/login", status_code=303)
+
+    identity = get_identity(request)
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": config.STRIPE_PRICE_ID_PLUS, "quantity": 1}],
+            success_url=f"{config.SITE_URL}/confirm-checkout?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{config.SITE_URL}/pricing",
+            client_reference_id=identity,
+        )
+    except Exception:
+        log.exception("stripe checkout session creation failed for Pro Plus")
         raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
 
     resp = RedirectResponse(session.url, status_code=303)
