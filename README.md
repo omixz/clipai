@@ -71,3 +71,38 @@ also support deploying an arbitrary Dockerfile if you'd rather use those.
 
 First request after a cold start will still take a few seconds (loading the
 warmed-but-not-yet-in-memory model) — normal, not a bug.
+
+### Oracle Cloud Free Tier (more RAM than Render's free 512MB)
+
+Oracle's Always Free tier includes an Ampere A1 (ARM) VM with up to 24GB RAM —
+real headroom for the Whisper + dubbing pipeline, versus Render's 512MB cap.
+Trade-off: it's a raw VM, not a PaaS, so you're responsible for the reverse
+proxy and HTTPS yourself (both handled by the files in this repo).
+
+1. Create an [Oracle Cloud](https://www.oracle.com/cloud/free/) account (needs
+   card verification — free tier stays free, but they require one on file).
+2. Create a Compute instance: shape **VM.Standard.A1.Flex** (Always Free
+   eligible), image **Ubuntu**, at least 2 OCPU / 12GB RAM. Open ports 80 and
+   443 in the instance's attached **Security List** (Console > Networking >
+   Virtual Cloud Networks > your VCN > Security Lists) — this is separate from
+   the OS firewall.
+3. Get a free hostname pointing at the VM's public IP — a bare IP can't get a
+   valid HTTPS certificate. [DuckDNS](https://www.duckdns.org) works with no
+   domain purchase needed. Put that hostname in `Caddyfile`.
+4. SSH into the VM and run `deploy/oracle-bootstrap.sh` — installs Docker,
+   clones this repo to `/opt/peakcut`, and brings up `docker-compose.yml`
+   (the app + a Caddy reverse proxy that gets HTTPS automatically via Let's
+   Encrypt). Copy `.env.example` to `.env` and fill in real secrets first.
+5. **Update the Google OAuth Client's authorized redirect URIs** (Google Cloud
+   Console > Credentials) to include `https://your-hostname/auth/google/callback`
+   — sign-in will 400 without this, since Google validates the redirect URI
+   exactly against what's registered.
+
+Redeploying after a code change: `cd /opt/peakcut && git pull && sudo docker
+compose up -d --build` — no CI/CD wired up, matching how deploys to Render
+were done manually via API throughout this project.
+
+Unlike Render's free tier, `docker-compose.yml` gives the app container a real
+persistent volume for `jobs/` — it survives restarts here, though Pro status
+still shouldn't be trusted from local storage (see `check_pro_status` above)
+since a VM can still be rebuilt or migrated.
