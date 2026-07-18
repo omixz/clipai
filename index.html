@@ -502,6 +502,99 @@
     }
 
     refreshUsage();
+
+    // ── Simple Chatbot for Customer Support ──────────────────────────────
+    const chatbotData = {
+      "how long": "Usually 2–5 minutes depending on video length. Transcription is typically the longest step.",
+      "what videos work": "Best: podcasts, interviews, talks, sermons, lectures. Avoid: music-only, silent footage.",
+      "why failed": "Most common: video too short, no clear speech, or unsupported codec. Try a longer video with clearer audio.",
+      "what is pro": "Pro ($15/mo) gives you unlimited clips instead of 5/month, removes the watermark, and unlocks dubbing to Spanish/French/Portuguese.",
+      "how download": "Each clip has a download button. Or use 'Download All as ZIP' to get all 3 clips + metadata in one file.",
+      "can i edit": "Peakcut auto-cuts and captions. For further editing, download the MP4 and use CapCut, Adobe Premiere, or similar.",
+      "refund": "We process refunds within 5–7 business days. Contact support@peakcut.example with your order details.",
+      "delete account": "Email support@peakcut.example and we'll delete your data within 24 hours.",
+    };
+
+    function initChatbot() {
+      const chatWidget = document.createElement('div');
+      chatWidget.style.cssText = `
+        position: fixed; bottom: 20px; right: 20px; z-index: 999;
+        font-family: system-ui, -apple-system, sans-serif;
+      `;
+      chatWidget.innerHTML = `
+        <button id="chatToggle" style="
+          width: 60px; height: 60px; border-radius: 50%; background: var(--accent);
+          color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          transition: transform 0.2s; display: flex; align-items: center; justify-content: center;
+        ">💬</button>
+        <div id="chatWindow" style="
+          display: none; position: absolute; bottom: 80px; right: 0; width: 360px; max-height: 500px;
+          background: white; border-radius: 12px; box-shadow: 0 5px 40px rgba(0,0,0,0.16); flex-direction: column;
+          overflow: hidden;
+        ">
+          <div style="background: var(--accent); color: white; padding: 16px; font-weight: 600;">
+            Peakcut Support
+            <button id="chatClose" style="float: right; background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
+          </div>
+          <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; max-height: 350px;"></div>
+          <div style="display: flex; gap: 8px; padding: 12px; border-top: 1px solid #e3e0f0;">
+            <input id="chatInput" placeholder="Ask a question..." style="flex: 1; border: 1px solid #e3e0f0; border-radius: 6px; padding: 8px; font-size: 14px;">
+            <button id="chatSend" style="background: var(--accent); color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-weight: 600;">Send</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(chatWidget);
+
+      const toggle = document.getElementById('chatToggle');
+      const window_ = document.getElementById('chatWindow');
+      const messages = document.getElementById('chatMessages');
+      const input = document.getElementById('chatInput');
+      const send = document.getElementById('chatSend');
+      const close = document.getElementById('chatClose');
+
+      toggle.addEventListener('click', () => {
+        window_.style.display = window_.style.display === 'none' ? 'flex' : 'none';
+        if (window_.style.display === 'flex' && messages.children.length === 0) {
+          addMessage('Hi! I\'m the Peakcut support bot. Ask me anything about pricing, how it works, troubleshooting, etc.', 'bot');
+        }
+      });
+      close.addEventListener('click', () => window_.style.display = 'none');
+
+      send.addEventListener('click', () => {
+        const text = input.value.trim();
+        if (!text) return;
+        addMessage(text, 'user');
+        input.value = '';
+        const lower = text.toLowerCase();
+        let found = false;
+        for (const [key, response] of Object.entries(chatbotData)) {
+          if (lower.includes(key)) {
+            setTimeout(() => addMessage(response, 'bot'), 300);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          setTimeout(() => addMessage("I'm not sure about that. Try emailing support@peakcut.example for help, or check the FAQ above.", 'bot'), 300);
+        }
+      });
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') send.click();
+      });
+
+      function addMessage(text, sender) {
+        const msg = document.createElement('div');
+        msg.style.cssText = `
+          padding: 10px 12px; border-radius: 8px; font-size: 14px;
+          background: ${sender === 'bot' ? '#f0ecff' : 'var(--accent)'}; color: ${sender === 'bot' ? 'var(--ink)' : 'white'};
+          align-self: ${sender === 'bot' ? 'flex-start' : 'flex-end'}; max-width: 85%;
+        `;
+        msg.textContent = text;
+        messages.appendChild(msg);
+        messages.scrollTop = messages.scrollHeight;
+      }
+    }
+    initChatbot();
   </script>
 </body>
 </html>
