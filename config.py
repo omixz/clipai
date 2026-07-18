@@ -48,6 +48,6 @@ EMAIL_CONFIGURED = RESEND_API_KEY != "re_REPLACE_ME"
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "support@peakcut.example")
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
-FREE_LIMIT = int(os.environ.get("FREE_LIMIT", "1"))
+FREE_LIMIT = int(os.environ.get("FREE_LIMIT", "5"))
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "300"))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
