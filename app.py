@@ -324,7 +324,9 @@ def check_ip_rate_limit(ip: str) -> bool:
 
 @app.post("/process")
 async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None),
-                   notify_email: str | None = Form(None)):
+                   notify_email: str | None = Form(None), clip_format: str = Form("vertical")):
+    if clip_format not in ("vertical", "square", "horizontal"):
+        raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
     cleanup_old_jobs()
 
     if not check_ip_rate_limit(get_request_ip(request)):
@@ -384,7 +386,7 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
 
     _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
              input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
-             notify_email=notify_email)
+             notify_email=notify_email, clip_format=clip_format)
     try:
         _job_queue.put_nowait(job_id)
     except queue.Full:
