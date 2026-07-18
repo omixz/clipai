@@ -85,6 +85,18 @@
   details p { color: var(--muted); font-size: 0.92rem; margin: 10px 0 0; }
 
   footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 30px 0 50px; }
+
+  .account-bar { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.85rem; color: var(--muted); }
+  .account-bar a { color: var(--muted); }
+  .signin-gate { text-align: center; padding: 40px 20px; background: var(--card); border: 2px dashed var(--border); border-radius: var(--radius); margin: 36px 0 12px; }
+  .signin-gate p { color: var(--muted); margin: 6px 0 20px; }
+  .google-btn {
+    display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #3c4043;
+    border: 1px solid #dadce0; border-radius: 999px; padding: 10px 22px; font-weight: 600;
+    font-size: 0.9rem; cursor: pointer; text-decoration: none;
+  }
+  .google-btn:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+  .google-btn svg { width: 18px; height: 18px; }
 </style>
 </head>
 <body>
@@ -92,8 +104,20 @@
     <header>
       <p class="eyebrow">Free AI Video Clipper<span class="pro-badge" id="proBadge" style="display:none">Pro</span></p>
       <h1>Turn long videos into short, ready-to-post clips</h1>
-      <p class="tagline">Upload once — ClipAI finds the best moments, cuts them vertical, and burns in captions automatically. No sign-up, no editing skills. First video free.</p>
+      <p class="tagline" id="tagline">Upload once — ClipAI finds the best moments, cuts them vertical, and burns in captions automatically. No editing skills needed. First video free.</p>
     </header>
+
+    <div class="account-bar" id="accountBar" style="display:none"></div>
+
+    <div class="signin-gate" id="signinGate" style="display:none">
+      <div class="icon" style="font-size:2rem">🔒</div>
+      <strong>Sign in to process your free video</strong>
+      <p>A free Google account is all it takes — keeps things fair so everyone actually gets their one free video.</p>
+      <a class="google-btn" href="/auth/google/login">
+        <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-2.1 14.1-5.5l-6.5-5.5C29.6 35.9 26.9 37 24 37c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.8 40.5 16.3 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.5 5.5C41.5 36 45 30.5 45 24c0-1.4-.1-2.7-.4-3.5z"/></svg>
+        Sign in with Google
+      </a>
+    </div>
 
     <div class="drop-zone" id="dropZone">
       <div class="icon">🎬</div>
@@ -138,7 +162,7 @@
       <h2>Frequently asked questions</h2>
       <details>
         <summary>Is it really free?</summary>
-        <p>Yes — your first video is free, no account or card needed. Pro ($15/mo) removes the limit and the watermark.</p>
+        <p>Yes — your first video is free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark.</p>
       </details>
       <details>
         <summary>How long does it take?</summary>
@@ -169,13 +193,38 @@
     const upgradeBtn = document.getElementById('upgradeBtn');
     const progressTrack = document.getElementById('progressTrack');
     const progressBar = document.getElementById('progressBar');
+    const accountBar = document.getElementById('accountBar');
+    const signinGate = document.getElementById('signinGate');
 
     const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
 
     async function refreshUsage() {
       try {
         const res = await fetch('/usage');
         const data = await res.json();
+
+        // Sign-in is only enforced once real Google credentials are configured
+        // server-side — until then this whole block is a no-op and the site
+        // behaves exactly as it did before (anonymous, cookie-tracked).
+        if (data.google_configured) {
+          if (data.signed_in) {
+            accountBar.style.display = 'flex';
+            accountBar.innerHTML = `Signed in as <strong>${escapeHtml(data.email)}</strong> · <a href="/auth/logout">Sign out</a>`;
+            signinGate.style.display = 'none';
+            dropZone.style.display = '';
+          } else {
+            accountBar.style.display = 'none';
+            signinGate.style.display = 'block';
+            dropZone.style.display = 'none';
+          }
+        }
+
         if (data.pro) {
           usageNote.textContent = 'Pro plan — unlimited videos';
           proBadge.style.display = 'inline-block';
@@ -233,6 +282,12 @@
           setBusy(false);
           paywall.style.display = 'block';
           await refreshUsage();
+          return;
+        }
+        if (res.status === 401) {
+          statusEl.textContent = '';
+          setBusy(false);
+          await refreshUsage(); // reveals the sign-in gate
           return;
         }
         if (!res.ok) {
@@ -306,12 +361,6 @@
       tick();
     }
 
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
-
     function renderClips(clips) {
       clipsEl.innerHTML = clips.map(c => `
         <div class="clip-card">
@@ -332,6 +381,15 @@
       history.replaceState(null, '', '/');
     } else if (params.get('upgrade_error') === '1') {
       statusEl.textContent = "Something went wrong confirming your upgrade — if you were charged, contact support and we'll sort it out.";
+      history.replaceState(null, '', '/');
+    } else if (params.get('signed_in') === '1') {
+      statusEl.textContent = "You're signed in — drop a video in to get started.";
+      history.replaceState(null, '', '/');
+    } else if (params.get('auth_error') === 'unverified') {
+      statusEl.textContent = "That Google account's email isn't verified, so we can't use it to sign in — try a different account.";
+      history.replaceState(null, '', '/');
+    } else if (params.get('auth_error') === '1') {
+      statusEl.textContent = 'Sign-in failed — please try again.';
       history.replaceState(null, '', '/');
     }
 

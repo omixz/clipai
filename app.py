@@ -11,6 +11,7 @@ import stripe
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
+import auth
 import config
 import pipeline_lib
 
@@ -70,6 +71,26 @@ def refund_free_use(cid):
 
 def get_client_id(request: Request) -> str:
     return request.cookies.get("clipai_cid") or str(uuid.uuid4())
+
+
+def get_account(request: Request) -> dict | None:
+    """The signed-in Google account, if any — see auth.py. Returns
+    {"sub": ..., "email": ...} or None."""
+    return auth.read_account_cookie(request.cookies.get(auth.ACCOUNT_COOKIE))
+
+
+def get_identity(request: Request) -> str:
+    """The key usage.json tracks the free-tier counter under. Once Google
+    sign-in is configured, this is the Google account (sub) — much harder to
+    farm than a browser cookie, which is exactly the gap OpusClip/Vidyo.ai
+    close by requiring an account before your first free video. Until then,
+    falls back to the anonymous per-browser cookie so the site keeps working
+    unconfigured."""
+    if config.GOOGLE_SIGNIN_CONFIGURED:
+        account = get_account(request)
+        if account:
+            return f"acct:{account['sub']}"
+    return f"cid:{get_client_id(request)}"
 
 
 def check_pro_status(request: Request) -> bool:
@@ -149,7 +170,7 @@ def _worker():
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
             if not job["is_pro"]:
-                refund_free_use(job["cid"])
+                refund_free_use(job["identity"])
             _set_job(job_id, status="failed",
                      error="Processing failed — the video may be too short, silent, or an unsupported codec. Your free video was not used up.",
                      finished_at=time.time())
@@ -189,20 +210,30 @@ def robots():
 
 @app.get("/usage")
 def usage(request: Request):
-    cid = get_client_id(request)
-    rec = load_usage().get(cid, {"used": 0})
+    identity = get_identity(request)
+    account = get_account(request)
+    rec = load_usage().get(identity, {"used": 0})
     is_pro = check_pro_status(request)
     remaining = None if is_pro else max(0, config.FREE_LIMIT - rec["used"])
-    resp = JSONResponse({"client_id": cid, "used": rec["used"], "pro": is_pro,
-                          "limit": config.FREE_LIMIT, "remaining": remaining})
-    resp.set_cookie("clipai_cid", cid, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
+    resp = JSONResponse({
+        "used": rec["used"], "pro": is_pro, "limit": config.FREE_LIMIT, "remaining": remaining,
+        "google_configured": config.GOOGLE_SIGNIN_CONFIGURED,
+        "signed_in": account is not None,
+        "email": account["email"] if account else None,
+    })
+    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
+                     httponly=True, samesite="lax")
     return resp
 
 
 @app.post("/process")
 async def process(request: Request, file: UploadFile = File(...)):
     cleanup_old_jobs()
-    cid = get_client_id(request)
+
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        raise HTTPException(status_code=401, detail="Sign in with Google to process a video.")
+
+    identity = get_identity(request)
     is_pro = check_pro_status(request)
 
     ext = Path(file.filename or "").suffix.lower()
@@ -212,7 +243,7 @@ async def process(request: Request, file: UploadFile = File(...)):
     if _job_queue.full():
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
-    if not is_pro and not reserve_free_use(cid):
+    if not is_pro and not reserve_free_use(identity):
         raise HTTPException(status_code=402, detail="Free plan limit reached (1 video). Upgrade to Pro for unlimited clips.")
 
     job_id = str(uuid.uuid4())[:8]
@@ -232,16 +263,16 @@ async def process(request: Request, file: UploadFile = File(...)):
     except HTTPException:
         shutil.rmtree(job_dir, ignore_errors=True)
         if not is_pro:
-            refund_free_use(cid)
+            refund_free_use(identity)
         raise
     except Exception:
         shutil.rmtree(job_dir, ignore_errors=True)
         if not is_pro:
-            refund_free_use(cid)
+            refund_free_use(identity)
         log.exception("upload failed")
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
-    _set_job(job_id, status="queued", cid=cid, is_pro=is_pro,
+    _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
              input_path=str(input_path), created_at=time.time())
     try:
         _job_queue.put_nowait(job_id)
@@ -250,11 +281,12 @@ async def process(request: Request, file: UploadFile = File(...)):
         with _jobs_lock:
             _jobs.pop(job_id, None)
         if not is_pro:
-            refund_free_use(cid)
+            refund_free_use(identity)
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
     resp = JSONResponse({"job_id": job_id, "status": "queued"})
-    resp.set_cookie("clipai_cid", cid, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
+    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
+                     httponly=True, samesite="lax")
     return resp
 
 
@@ -286,25 +318,85 @@ def get_clip(job_id: str, filename: str):
     return FileResponse(str(path))
 
 
+# ── Sign in with Google ──────────────────────────────────────────────────────
+# Soft-required: see config.GOOGLE_SIGNIN_CONFIGURED. These routes work
+# regardless, so the flow can be tested end-to-end once real credentials are
+# added without any other code changes.
+
+@app.get("/auth/google/login")
+def google_login(request: Request):
+    if not config.GOOGLE_SIGNIN_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Google sign-in isn't configured yet.")
+    state = auth.new_state()
+    redirect_uri = f"{config.SITE_URL}/auth/google/callback"
+    try:
+        login_url = auth.build_login_url(redirect_uri, state)
+    except Exception:
+        log.exception("failed to build Google login URL")
+        raise HTTPException(status_code=502, detail="Couldn't reach Google right now — try again shortly.")
+    resp = RedirectResponse(login_url, status_code=303)
+    resp.set_cookie(auth.STATE_COOKIE, state, max_age=600, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/auth/google/callback")
+def google_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None):
+    if error:
+        return RedirectResponse(f"{config.SITE_URL}/?auth_error=1", status_code=303)
+
+    expected_state = request.cookies.get(auth.STATE_COOKIE)
+    if not code or not state or not expected_state or state != expected_state:
+        raise HTTPException(status_code=400, detail="Invalid or expired sign-in attempt — please try again.")
+
+    try:
+        claims = auth.exchange_code_for_claims(code, f"{config.SITE_URL}/auth/google/callback")
+    except Exception:
+        log.exception("Google OAuth exchange failed")
+        return RedirectResponse(f"{config.SITE_URL}/?auth_error=1", status_code=303)
+
+    if not claims.get("email_verified"):
+        # Google itself is telling us this email hasn't been verified — the
+        # whole point of requiring an account is a real, checkable identity.
+        return RedirectResponse(f"{config.SITE_URL}/?auth_error=unverified", status_code=303)
+
+    account_token = auth.sign_account_cookie(claims["sub"], claims["email"])
+    resp = RedirectResponse(f"{config.SITE_URL}/?signed_in=1", status_code=303)
+    resp.set_cookie(auth.ACCOUNT_COOKIE, account_token, max_age=auth.ACCOUNT_MAX_AGE,
+                     httponly=True, samesite="lax")
+    resp.delete_cookie(auth.STATE_COOKIE)
+    return resp
+
+
+@app.get("/auth/logout")
+def logout():
+    resp = RedirectResponse(f"{config.SITE_URL}/", status_code=303)
+    resp.delete_cookie(auth.ACCOUNT_COOKIE)
+    return resp
+
+
 # ── Stripe billing ──────────────────────────────────────────────────────────
 
 @app.get("/create-checkout-session")
 def create_checkout_session(request: Request):
-    cid = get_client_id(request)
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        return RedirectResponse("/auth/google/login", status_code=303)
+
+    identity = get_identity(request)
     try:
         session = stripe.checkout.Session.create(
             mode="subscription",
             line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
             success_url=f"{config.SITE_URL}/confirm-checkout?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{config.SITE_URL}/",
-            client_reference_id=cid,
+            client_reference_id=identity,
         )
     except Exception:
         log.exception("stripe checkout session creation failed")
         raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
 
     resp = RedirectResponse(session.url, status_code=303)
-    resp.set_cookie("clipai_cid", cid, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
+    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
+                     httponly=True, samesite="lax")
     return resp
 
 
