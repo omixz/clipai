@@ -130,10 +130,15 @@
   .virality-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; color: #fff; font-size: 0.7rem; font-weight: 700; text-transform: none; letter-spacing: normal; vertical-align: middle; }
   .clip-card p { margin: 4px 0 0; font-size: 0.9rem; color: var(--ink); }
   .clip-card .score { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
-  .clip-card a.download {
+  .clip-card .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .clip-card a.download, .clip-card button.share-btn {
     background: var(--ink); color: #fff; text-decoration: none; padding: 8px 16px;
     border-radius: 999px; font-size: 0.85rem; font-weight: 700; white-space: nowrap;
+    border: none; cursor: pointer; transition: background 0.2s;
   }
+  .clip-card button.share-btn { background: var(--accent); }
+  .clip-card button.share-btn:hover { background: var(--accent-dark); }
+  .clip-card a.download:hover { background: #3a3a4e; }
   @media (max-width: 560px) { .clip-card { flex-wrap: wrap; } }
 
   .paywall { text-align: center; padding: 30px; background: #fff4e6; border: 1px dashed var(--accent); border-radius: var(--radius); margin: 20px 0 30px; }
@@ -651,22 +656,37 @@
       return '#94a3b8';
     }
 
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const oldText = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => btn.textContent = oldText, 2000);
+      });
+    }
+
     function renderClips(clips, jobId) {
       const header = jobId ? `<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center">
         <h2 style="margin:0;flex:1">Your clips</h2>
         <a href="/jobs/${jobId}/download/all" class="download" style="white-space:nowrap">📦 Download All as ZIP</a>
       </div>` : '';
-      clipsEl.innerHTML = header + clips.map(c => `
+      clipsEl.innerHTML = header + clips.map((c, idx) => {
+        const shareText = `"${c.text}"\n\n#shorts #reels #fyp #viral`;
+        return `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
             <div class="rank">Clip #${c.rank} <span class="virality-badge" style="background:${viralityColor(c.virality_score)}">${c.virality_score}/100 Virality</span></div>
             <p>"${escapeHtml(c.text)}"</p>
             <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
+            <div class="actions">
+              <a class="download" href="${encodeURI(c.url)}" download>Download</a>
+              <button class="share-btn" onclick="copyToClipboard('${shareText.replace(/'/g, "\\'")}', this)">Share</button>
+              <a class="download" href="https://tiktok.com/upload" target="_blank" style="background:var(--accent);flex:1;text-align:center;text-decoration:none">TikTok ↗</a>
+            </div>
           </div>
-          <a class="download" href="${encodeURI(c.url)}" download>Download</a>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     const params = new URLSearchParams(location.search);
