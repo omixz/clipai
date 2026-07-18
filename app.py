@@ -70,7 +70,14 @@ def refund_free_use(cid):
 
 
 def get_client_id(request: Request) -> str:
-    return request.cookies.get("clipai_cid") or str(uuid.uuid4())
+    """Cached on request.state so a fresh (cookie-less) visitor gets the same
+    id every time this is called within one request — otherwise the id used
+    to reserve free-tier usage and the id written into the response cookie
+    would be two different random UUIDs, and the counter would never
+    actually stick for new anonymous visitors."""
+    if not hasattr(request.state, "clipai_cid"):
+        request.state.clipai_cid = request.cookies.get("clipai_cid") or str(uuid.uuid4())
+    return request.state.clipai_cid
 
 
 def get_account(request: Request) -> dict | None:
@@ -189,6 +196,15 @@ def cleanup_old_jobs():
                     _jobs.pop(job_dir.name, None)
     except Exception:
         log.exception("job cleanup failed")
+
+    # Failed jobs have their directory removed immediately (see _worker), so
+    # the sweep above never reaches their _jobs entry — without this, every
+    # failed upload would leak an entry in _jobs for the life of the process.
+    with _jobs_lock:
+        stale = [jid for jid, j in _jobs.items()
+                 if j.get("status") == "failed" and now - j.get("finished_at", 0) > JOB_MAX_AGE_SECONDS]
+        for jid in stale:
+            _jobs.pop(jid, None)
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
