@@ -17,6 +17,19 @@ def get_model():
     return _model
 
 
+def unload_model():
+    """Free the cached Whisper model. Normally it's kept warm across jobs to
+    avoid reloading it every time, but a dub job also needs Argos Translate +
+    Piper TTS loaded at the same time — measured peak RSS with all three
+    resident was 1.15GB, well over Render's 512MB free-tier cap. Whisper is
+    only needed for the transcription step, so for dub jobs we drop it right
+    after and eat a reload on the next job instead of risking an OOM kill."""
+    global _model
+    import gc
+    _model = None
+    gc.collect()
+
+
 def transcribe(video_path):
     model = get_model()
     segments, info = model.transcribe(video_path, word_timestamps=True)
@@ -145,13 +158,18 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True):
 def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None):
     os.makedirs(out_dir, exist_ok=True)
     segments, duration, source_lang = transcribe(video_path)
-    scored = score_candidates(video_path, segments)
-    top = pick_top_n(scored, n=n_clips)
 
     if dub_lang and source_lang != "en":
         raise ValueError(
             f"Dubbing currently only supports English source videos (detected: {source_lang})."
         )
+    if dub_lang:
+        # scoring only needs ffmpeg (astats), not the Whisper model — free it
+        # now, before Argos Translate + Piper TTS load, to stay under 512MB.
+        unload_model()
+
+    scored = score_candidates(video_path, segments)
+    top = pick_top_n(scored, n=n_clips)
 
     manifest = []
     for i, seg in enumerate(top, 1):

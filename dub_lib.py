@@ -1,22 +1,27 @@
 """Multi-language dubbing: translate a clip's transcript and re-voice it with
 a self-hosted TTS model, so the output can be posted to audiences that don't
 speak the source language — Klap's strongest differentiator among the
-competitors researched. Kept fully free/self-hosted (Argos Translate +
-Piper TTS) rather than a paid translation/TTS API, matching every other
-zero-marginal-cost design choice in this app (self-hosted Whisper, no LLM
-call for scoring, etc).
+competitors researched.
+
+Translation was originally Argos Translate (fully offline), but measured
+peak RSS with Argos + Piper both loaded was 1.15GB — Argos pulls in spaCy
+and Stanza as dependencies, and importing it alone costs ~600-900MB, more
+than Render's entire 512MB free-tier cap by itself. Switched to
+deep-translator (a thin wrapper around Google's free web translate
+endpoint): ~30MB total, no API key, still free, but needs outbound
+internet at request time instead of being fully offline. Piper TTS stays
+self-hosted (~30-75MB per voice, no such issue).
 
 v1 scope: source video must be English (checked via Whisper's detected
-language) since only en->{es,fr,pt} Argos models are warmed into the
-Docker image. Widening this to more source/target pairs later just means
-warming more model pairs — no code changes needed here.
+language) since only {es,fr,pt} Piper voices are warmed into the Docker
+image. Widening this to more languages later just means warming another
+voice — no code changes needed here.
 """
 import logging
 import os
-import re
 import subprocess
 
-import argostranslate.translate
+from deep_translator import GoogleTranslator
 from piper import PiperVoice
 
 import pipeline_lib
@@ -44,7 +49,7 @@ def get_voice(lang_code: str) -> PiperVoice:
 
 
 def translate_text(text: str, target_lang: str, source_lang: str = "en") -> str:
-    return argostranslate.translate.translate(text, source_lang, target_lang)
+    return GoogleTranslator(source=source_lang, target=target_lang).translate(text)
 
 
 def synthesize_speech(text: str, target_lang: str, out_wav_path: str):
