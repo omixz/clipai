@@ -24,7 +24,7 @@ def transcribe(video_path):
     for seg in segments:
         words = [{"word": w.word.strip(), "start": w.start, "end": w.end} for w in (seg.words or [])]
         out.append({"start": seg.start, "end": seg.end, "text": seg.text.strip(), "words": words})
-    return out, info.duration
+    return out, info.duration, info.language
 
 
 def audio_energy_db(video_path, start, end):
@@ -142,19 +142,32 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True):
     return out_path, result.returncode == 0, result.stderr[-800:]
 
 
-def process_video(video_path, out_dir, n_clips=3, watermark=True):
+def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None):
     os.makedirs(out_dir, exist_ok=True)
-    segments, duration = transcribe(video_path)
+    segments, duration, source_lang = transcribe(video_path)
     scored = score_candidates(video_path, segments)
     top = pick_top_n(scored, n=n_clips)
 
+    if dub_lang and source_lang != "en":
+        raise ValueError(
+            f"Dubbing currently only supports English source videos (detected: {source_lang})."
+        )
+
     manifest = []
     for i, seg in enumerate(top, 1):
-        out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark)
+        if dub_lang:
+            import dub_lib
+            out_path, translated_text, ok, err = dub_lib.render_dubbed_clip(
+                video_path, seg, out_dir, i, dub_lang, source_lang=source_lang, watermark=watermark
+            )
+            text = translated_text
+        else:
+            out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark)
+            text = seg["text"]
         manifest.append({
             "rank": i, "start": seg["start"], "end": seg["end"],
             "score": seg["composite"], "virality_score": seg["virality_score"],
-            "text": seg["text"],
+            "text": text,
             "file": os.path.basename(out_path), "ok": ok,
             "error": None if ok else err,
         })

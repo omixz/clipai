@@ -51,6 +51,11 @@
       "@type": "Question",
       "name": "What videos work best?",
       "acceptedAnswer": { "@type": "Answer", "text": "Talking content with clear speech: podcasts, interviews, talks, streams, sermons, lectures. Music-only or silent footage won't produce good clips." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I dub my clips into another language?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — Pro plans can dub English-source clips into Spanish, French, or Portuguese: the speech is translated and re-voiced, and the captions are translated too." }
     }
   ]
 }
@@ -81,6 +86,13 @@
   input[type=file] { display: none; }
 
   .usage-note { text-align: center; color: var(--muted); font-size: 0.85rem; margin-bottom: 30px; }
+
+  .dub-row { margin: 20px 0 0; text-align: center; font-size: 0.85rem; }
+  .dub-row label { font-weight: 600; margin-right: 8px; }
+  .dub-row select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.85rem; }
+  .dub-row select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .dub-row .pro-tag { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 0.65rem; font-weight: 700; vertical-align: middle; }
+  .dub-row .dub-hint { color: var(--muted); font-size: 0.75rem; margin: 4px 0 0; }
 
   button.primary {
     display: block; margin: 0 auto; background: var(--accent); color: #fff; border: none;
@@ -165,6 +177,17 @@
       </a>
     </div>
 
+    <div class="dub-row" id="dubRow">
+      <label for="dubLang">Dub into another language <span class="pro-tag">Pro</span></label>
+      <select id="dubLang">
+        <option value="">Off — keep original language</option>
+        <option value="es">Spanish</option>
+        <option value="fr">French</option>
+        <option value="pt">Portuguese</option>
+      </select>
+      <p class="dub-hint">Source video must be in English. Captions and voice are both translated.</p>
+    </div>
+
     <div class="drop-zone" id="dropZone">
       <div class="icon">🎬</div>
       <strong>Drop a video here or click to upload</strong>
@@ -222,6 +245,10 @@
         <summary>What videos work best?</summary>
         <p>Talking content with clear speech: podcasts, interviews, talks, streams, sermons, lectures. Music-only or silent footage won't produce good clips.</p>
       </details>
+      <details>
+        <summary>Can I dub my clips into another language?</summary>
+        <p>Yes — Pro plans can dub English-source clips into Spanish, French, or Portuguese: the speech is translated and re-voiced, and the captions are translated too.</p>
+      </details>
     </section>
   </div>
 
@@ -241,6 +268,7 @@
     const progressBar = document.getElementById('progressBar');
     const accountBar = document.getElementById('accountBar');
     const signinGate = document.getElementById('signinGate');
+    const dubLang = document.getElementById('dubLang');
 
     const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
 
@@ -276,12 +304,15 @@
           proBadge.style.display = 'inline-block';
           adSlot.style.display = 'none';
           paywall.style.display = 'none';
+          dubLang.disabled = false;
         } else {
           usageNote.textContent = data.remaining > 0
             ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
             : `Free plan used up (${data.limit}/${data.limit})`;
           proBadge.style.display = 'none';
           adSlot.style.display = 'block';
+          dubLang.disabled = true;
+          dubLang.value = '';
         }
         return data;
       } catch (e) {
@@ -319,6 +350,7 @@
 
       const formData = new FormData();
       formData.append('file', file);
+      if (dubLang.value) formData.append('dub_lang', dubLang.value);
 
       let jobId;
       try {

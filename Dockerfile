@@ -22,5 +22,19 @@ RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('tiny', de
 # Only go offline for HF lookups at runtime, now that the model is cached in the image.
 ENV HF_HUB_OFFLINE=1
 
+# Dubbing: pre-download Piper TTS voices (small/low-quality variants to keep
+# image size and runtime memory down — see dub_lib.py) and Argos Translate
+# en->{es,fr,pt} models, same warm-into-the-image idea as Whisper above.
+ENV PIPER_VOICES_DIR=/app/voices
+RUN mkdir -p /app/voices && \
+    python3 -m piper.download_voices --download-dir /app/voices es_ES-carlfm-x_low && \
+    python3 -m piper.download_voices --download-dir /app/voices fr_FR-siwis-low && \
+    python3 -m piper.download_voices --download-dir /app/voices pt_BR-faber-medium
+RUN python3 -c "\
+import argostranslate.package; \
+argostranslate.package.update_package_index(); \
+pkgs = argostranslate.package.get_available_packages(); \
+[argostranslate.package.install_from_path(next(p for p in pkgs if p.from_code == 'en' and p.to_code == c).download()) for c in ('es', 'fr', 'pt')]"
+
 EXPOSE 8000
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

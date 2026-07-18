@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 import stripe
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 import auth
@@ -159,7 +159,8 @@ def _worker():
         job_dir = JOBS_DIR / job_id
         try:
             result = pipeline_lib.process_video(
-                job["input_path"], str(job_dir), n_clips=3, watermark=not job["is_pro"]
+                job["input_path"], str(job_dir), n_clips=3, watermark=not job["is_pro"],
+                dub_lang=job.get("dub_lang"),
             )
             if not result["clips"]:
                 raise RuntimeError("no usable clips found")
@@ -173,6 +174,15 @@ def _worker():
                 Path(job["input_path"]).unlink(missing_ok=True)
             except Exception:
                 pass
+        except ValueError as e:
+            # e.g. dubbing requested on a non-English source video — a
+            # user-input problem, not a processing failure, so show the
+            # actual reason rather than the generic message below.
+            log.info("job %s rejected: %s", job_id, e)
+            shutil.rmtree(job_dir, ignore_errors=True)
+            if not job["is_pro"]:
+                refund_free_use(job["identity"])
+            _set_job(job_id, status="failed", error=str(e), finished_at=time.time())
         except Exception:
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
@@ -280,7 +290,7 @@ def check_ip_rate_limit(ip: str) -> bool:
 
 
 @app.post("/process")
-async def process(request: Request, file: UploadFile = File(...)):
+async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None)):
     cleanup_old_jobs()
 
     if not check_ip_rate_limit(get_request_ip(request)):
@@ -295,6 +305,13 @@ async def process(request: Request, file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in config.ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'. Use MP4, MOV, M4V, WEBM, or MKV.")
+
+    if dub_lang:
+        import dub_lib
+        if dub_lang not in dub_lib.DUB_LANGUAGES:
+            raise HTTPException(status_code=400, detail="Unsupported dub language.")
+        if not is_pro:
+            raise HTTPException(status_code=402, detail="Dubbing is a Pro feature. Upgrade to Pro to dub clips into other languages.")
 
     if _job_queue.full():
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
@@ -329,7 +346,7 @@ async def process(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
     _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
-             input_path=str(input_path), created_at=time.time())
+             input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang)
     try:
         _job_queue.put_nowait(job_id)
     except queue.Full:

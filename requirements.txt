@@ -6,3 +6,5 @@ stripe>=9.0
 httpx>=0.27
 pyjwt[crypto]>=2.7
 itsdangerous>=2.1
+argostranslate>=1.9
+piper-tts>=1.2
