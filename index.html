@@ -220,6 +220,17 @@
       <p class="dub-hint">Choose the format best for your platform.</p>
     </div>
 
+    <div class="dub-row">
+      <label for="captionStyle">Caption style</label>
+      <select id="captionStyle">
+        <option value="bold">Bold with shadow (default)</option>
+        <option value="outline">White outline</option>
+        <option value="subtle">Subtle gray</option>
+        <option value="neon">Neon yellow</option>
+      </select>
+      <p class="dub-hint">Choose how captions appear on your clips.</p>
+    </div>
+
     <div class="dub-row" id="notifyRow" style="display:none">
       <label for="notifyEmail">Email me when it's ready</label>
       <input type="email" id="notifyEmail" placeholder="you@example.com" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;" />
@@ -314,6 +325,7 @@
     const signinGate = document.getElementById('signinGate');
     const dubLang = document.getElementById('dubLang');
     const clipFormat = document.getElementById('clipFormat');
+    const captionStyle = document.getElementById('captionStyle');
     const notifyRow = document.getElementById('notifyRow');
     const notifyEmail = document.getElementById('notifyEmail');
     const batchQueue = document.getElementById('batchQueue');
@@ -477,6 +489,7 @@
       const formData = new FormData();
       formData.append('file', file);
       formData.append('clip_format', clipFormat.value);
+      formData.append('caption_style', captionStyle.value);
       if (dubLang.value) formData.append('dub_lang', dubLang.value);
       if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
 

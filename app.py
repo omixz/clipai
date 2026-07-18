@@ -231,7 +231,8 @@ def _worker():
         try:
             result = pipeline_lib.process_video(
                 job["input_path"], str(job_dir), n_clips=3, watermark=not job["is_pro"],
-                dub_lang=job.get("dub_lang"),
+                dub_lang=job.get("dub_lang"), clip_format=job.get("clip_format", "vertical"),
+                caption_style=job.get("caption_style", "bold"),
             )
             if not result["clips"]:
                 raise RuntimeError("no usable clips found")
@@ -406,9 +407,12 @@ def check_ip_rate_limit(ip: str) -> bool:
 
 @app.post("/process")
 async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None),
-                   notify_email: str | None = Form(None), clip_format: str = Form("vertical")):
+                   notify_email: str | None = Form(None), clip_format: str = Form("vertical"),
+                   caption_style: str = Form("bold")):
     if clip_format not in ("vertical", "square", "horizontal"):
         raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
+    if caption_style not in ("bold", "outline", "subtle", "neon"):
+        raise HTTPException(status_code=400, detail="caption_style must be 'bold', 'outline', 'subtle', or 'neon'.")
     cleanup_old_jobs()
 
     if not check_ip_rate_limit(get_request_ip(request)):
@@ -468,7 +472,7 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
 
     _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
              input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
-             notify_email=notify_email, clip_format=clip_format)
+             notify_email=notify_email, clip_format=clip_format, caption_style=caption_style)
     try:
         _job_queue.put_nowait(job_id)
     except queue.Full:

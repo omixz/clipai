@@ -141,7 +141,7 @@ def build_word_chunk_srt(words, clip_start, chunk_size=4, clean_fillers=True):
     return "\n".join(lines)
 
 
-def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="vertical"):
+def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="vertical", caption_style="bold"):
     srt_text = build_word_chunk_srt(seg["words"], seg["start"])
     virality = seg.get("virality_score", 0)
     srt_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.srt")
@@ -157,11 +157,18 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
     else:  # vertical (9:16)
         scale_pad = "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e"
 
+    # Caption styling options
+    caption_styles = {
+        "bold": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,Bold=1,Alignment=2,MarginV=140",
+        "outline": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=4,Bold=0,Alignment=2,MarginV=140",
+        "subtle": "FontName=DejaVu Sans,FontSize=28,PrimaryColour=&HB8B8B8,OutlineColour=&H000000,BorderStyle=1,Outline=1,Bold=0,Alignment=2,MarginV=140",
+        "neon": "FontName=DejaVu Sans,FontSize=32,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Bold=1,Alignment=2,MarginV=140,BackColour=&H00000080",
+    }
+    caption_style_str = caption_styles.get(caption_style, caption_styles["bold"])
+
     vf = (
         f"{scale_pad},"
-        f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"
-        "PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,"
-        "Bold=1,Alignment=2,MarginV=140'"
+        f"subtitles={srt_path}:force_style='{caption_style_str}'"
     )
     if watermark:
         vf += (
@@ -178,7 +185,7 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
     return out_path, result.returncode == 0, result.stderr[-800:]
 
 
-def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None, clip_format="vertical"):
+def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None, clip_format="vertical", caption_style="bold"):
     os.makedirs(out_dir, exist_ok=True)
     segments, duration, source_lang = transcribe(video_path)
 
@@ -203,7 +210,7 @@ def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None,
             )
             text = translated_text
         else:
-            out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark, clip_format=clip_format)
+            out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark, clip_format=clip_format, caption_style=caption_style)
             text = seg["text"]
         manifest.append({
             "rank": i, "start": seg["start"], "end": seg["end"],
