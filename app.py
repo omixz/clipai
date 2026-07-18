@@ -328,6 +328,13 @@ def api_docs():
     return (BASE_DIR / "api_docs.html").read_text()
 
 
+@app.get("/settings", response_class=HTMLResponse)
+def settings(request: Request):
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        return RedirectResponse("/auth/google/login", status_code=303)
+    return (BASE_DIR / "settings.html").read_text()
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy():
     return (BASE_DIR / "privacy.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)

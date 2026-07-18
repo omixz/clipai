@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings — Peakcut</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
+    --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.6; }
+  .wrap { max-width: 600px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 40px 0 20px; border-bottom: 1px solid var(--border); margin-bottom: 30px; }
+  .brand { font-size: 1rem; font-weight: 800; margin-bottom: 4px; }
+  h1 { font-size: 1.8rem; margin: 8px 0; }
+  header p { color: var(--muted); margin: 0; }
+
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .section h2 { margin-top: 0; font-size: 1.1rem; }
+  .section > div { margin-bottom: 20px; }
+  .section > div:last-child { margin-bottom: 0; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group:last-child { margin-bottom: 0; }
+  label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.95rem; }
+  input[type="text"], input[type="color"], select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; font-family: inherit; }
+  input[type="text"]:focus, input[type="color"]:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(112, 72, 232, 0.1); }
+
+  .watermark-preview { background: #1a1a2e; border-radius: 8px; padding: 20px; color: white; font-size: 0.9rem; text-align: center; margin-top: 12px; height: 100px; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+  .watermark-preview-text { font-size: 0.9rem; opacity: 0.8; }
+
+  .button-group { display: flex; gap: 12px; margin-top: 20px; }
+  button { padding: 12px 24px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
+  button.primary { background: var(--accent); color: white; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.secondary { background: transparent; border: 2px solid var(--border); color: var(--ink); }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  .pro-badge { display: inline-block; background: #7048e8; color: white; padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 800; margin-left: 8px; }
+
+  .api-keys { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .key-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); font-family: Monaco, monospace; font-size: 0.85rem; }
+  .key-item:last-child { border-bottom: none; }
+  .key-value { background: #f0eef8; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; }
+
+  .account-status { padding: 16px; background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 8px; margin-bottom: 16px; }
+  .account-status.pro { background: #f0fdf4; border-color: #bbf7d0; }
+  .status-label { font-weight: 600; margin-bottom: 4px; }
+
+  .danger-zone { background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius); padding: 20px; margin-top: 30px; }
+  .danger-zone h3 { color: #991b1b; margin-top: 0; }
+  .danger-zone button { background: #dc2626; color: white; }
+  .danger-zone button:hover { background: #b91c1c; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 30px 0 50px; }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .message { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+  .message.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+  .message.error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">🎬 Peakcut</div>
+      <h1>Settings</h1>
+      <p>Manage your account and preferences</p>
+    </header>
+
+    <div id="accountStatus" class="account-status">
+      <div class="status-label">Account: <span id="accountEmail">Loading…</span></div>
+      <div style="color: var(--muted); font-size: 0.9rem;">Plan: <span id="accountPlan">Free</span></div>
+    </div>
+
+    <div id="watermarkSection" style="display:none;">
+      <div class="section">
+        <h2>Custom Watermark <span class="pro-badge">Pro Plus</span></h2>
+        <div class="form-group">
+          <label for="watermarkText">Watermark text</label>
+          <input type="text" id="watermarkText" maxlength="30" placeholder="Your brand or name" />
+          <small style="color: var(--muted); display: block; margin-top: 4px;">Leave blank to use default Peakcut watermark. Max 30 characters.</small>
+        </div>
+        <div class="form-group">
+          <label for="watermarkColor">Watermark color</label>
+          <input type="color" id="watermarkColor" value="#ffffff" />
+        </div>
+        <div class="watermark-preview" id="watermarkPreview">
+          <div class="watermark-preview-text">Your watermark here</div>
+        </div>
+        <button class="primary" onclick="saveWatermark()">Save Watermark</button>
+        <button class="secondary" onclick="resetWatermark()">Use Default</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Export Presets</h2>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Save your favorite settings for quick reprocessing.</p>
+      <div class="form-group">
+        <label for="presetName">Preset name</label>
+        <input type="text" id="presetName" placeholder="e.g., TikTok vertical, LinkedIn square" />
+      </div>
+      <div class="form-group">
+        <label for="presetFormat">Clip format</label>
+        <select id="presetFormat">
+          <option value="vertical">Vertical 9:16 (TikTok, Reels)</option>
+          <option value="square">Square 1:1 (Instagram, Pinterest)</option>
+          <option value="horizontal">Horizontal 16:9 (YouTube, LinkedIn)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="presetDub">Dub language (if enabled on your plan)</label>
+        <select id="presetDub">
+          <option value="">None — keep original language</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="pt">Portuguese</option>
+        </select>
+      </div>
+      <button class="primary" onclick="savePreset()">Save Preset</button>
+
+      <div id="presetsList" style="margin-top: 20px;"></div>
+    </div>
+
+    <div class="section">
+      <h2>API Keys</h2>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;"><a href="/api/docs" style="color: var(--accent); text-decoration: none;">API Documentation →</a></p>
+      <button class="primary" onclick="generateApiKey()" style="margin-bottom: 16px;">Generate New API Key</button>
+      <div id="apiKeysList"></div>
+    </div>
+
+    <div class="section">
+      <h2>Billing</h2>
+      <div id="billingInfo"></div>
+      <button class="primary" onclick="manageBilling()">Manage Billing in Stripe</button>
+    </div>
+
+    <div class="danger-zone">
+      <h3>Danger Zone</h3>
+      <p style="color: var(--muted); margin-top: 0;">These actions cannot be undone.</p>
+      <button onclick="if(confirm('Delete all your clips and metadata? This cannot be undone.')) deleteAllData();">Delete All Data</button>
+    </div>
+  </div>
+
+  <footer>
+    Peakcut — automatic short clips from long videos.
+    <a href="/privacy">Privacy</a> ·
+    <a href="/terms">Terms</a> ·
+    <a href="/">Back to app</a>
+  </footer>
+
+  <script>
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/usage');
+        const data = await res.json();
+
+        // Update account status
+        if (data.email) {
+          document.getElementById('accountEmail').textContent = escapeHtml(data.email);
+        }
+
+        const planText = data.pro ? (data.plan === 'plus' ? 'Pro Plus' : 'Pro') : 'Free';
+        document.getElementById('accountPlan').textContent = planText;
+        if (data.pro) {
+          document.getElementById('accountStatus').className = 'account-status pro';
+        }
+
+        // Show watermark section only for Pro Plus
+        if (data.plan === 'plus') {
+          document.getElementById('watermarkSection').style.display = 'block';
+          loadWatermarkSettings();
+        }
+
+        loadApiKeys();
+        loadPresets();
+      } catch (e) {
+        console.error('Failed to load settings:', e);
+      }
+    }
+
+    function loadWatermarkSettings() {
+      const saved = localStorage.getItem('watermarkSettings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        document.getElementById('watermarkText').value = settings.text || '';
+        document.getElementById('watermarkColor').value = settings.color || '#ffffff';
+        updateWatermarkPreview();
+      }
+    }
+
+    function updateWatermarkPreview() {
+      const text = document.getElementById('watermarkText').value || 'Your watermark here';
+      const color = document.getElementById('watermarkColor').value;
+      const preview = document.getElementById('watermarkPreview');
+      preview.innerHTML = `<div class="watermark-preview-text" style="color: ${color};">${escapeHtml(text)}</div>`;
+    }
+
+    function saveWatermark() {
+      const settings = {
+        text: document.getElementById('watermarkText').value,
+        color: document.getElementById('watermarkColor').value,
+      };
+      localStorage.setItem('watermarkSettings', JSON.stringify(settings));
+      alert('Watermark saved! It will appear on your next processed clips.');
+    }
+
+    function resetWatermark() {
+      localStorage.removeItem('watermarkSettings');
+      document.getElementById('watermarkText').value = '';
+      document.getElementById('watermarkColor').value = '#ffffff';
+      updateWatermarkPreview();
+      alert('Watermark reset to default.');
+    }
+
+    function savePreset() {
+      const name = document.getElementById('presetName').value.trim();
+      if (!name) {
+        alert('Enter a preset name');
+        return;
+      }
+
+      const preset = {
+        id: Date.now(),
+        name: name,
+        format: document.getElementById('presetFormat').value,
+        dub: document.getElementById('presetDub').value,
+      };
+
+      let presets = JSON.parse(localStorage.getItem('exportPresets') || '[]');
+      presets.push(preset);
+      localStorage.setItem('exportPresets', JSON.stringify(presets));
+
+      document.getElementById('presetName').value = '';
+      loadPresets();
+      alert('Preset saved!');
+    }
+
+    function loadPresets() {
+      const presets = JSON.parse(localStorage.getItem('exportPresets') || '[]');
+      const list = document.getElementById('presetsList');
+
+      if (presets.length === 0) {
+        list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No presets saved yet.</p>';
+        return;
+      }
+
+      list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Your presets</h3>' +
+        presets.map(p => `
+          <div class="api-keys">
+            <div class="key-item">
+              <div>
+                <strong>${escapeHtml(p.name)}</strong><br/>
+                <span style="font-size: 0.75rem; opacity: 0.7;">${p.format} • ${p.dub ? `Dubbed (${p.dub})` : 'Original'}</span>
+              </div>
+              <button class="secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="deletePreset(${p.id})">Delete</button>
+            </div>
+          </div>
+        `).join('');
+    }
+
+    function deletePreset(id) {
+      let presets = JSON.parse(localStorage.getItem('exportPresets') || '[]');
+      presets = presets.filter(p => p.id !== id);
+      localStorage.setItem('exportPresets', JSON.stringify(presets));
+      loadPresets();
+    }
+
+    async function generateApiKey() {
+      try {
+        const res = await fetch('/api/keys', { method: 'POST' });
+        if (!res.ok) throw new Error('Failed to generate API key');
+        const data = await res.json();
+        alert(`API key generated:\n\n${data.api_key}\n\nSave this key somewhere safe — you won't see it again!`);
+        loadApiKeys();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    async function loadApiKeys() {
+      try {
+        const res = await fetch('/api/keys');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const list = document.getElementById('apiKeysList');
+        if (data.keys.length === 0) {
+          list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No API keys yet.</p>';
+          return;
+        }
+
+        list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Active keys</h3>' +
+          data.keys.map(k => `
+            <div class="api-keys">
+              <div class="key-item">
+                <div>
+                  <div class="key-value">${escapeHtml(k.api_key)}</div>
+                  <div style="font-size: 0.75rem; color: var(--muted); margin-top: 4px;">${k.tier} • ${k.usage_this_month}/${k.tier === 'free' ? '100' : k.tier === 'pro' ? '500' : '2000'} calls</div>
+                </div>
+              </div>
+            </div>
+          `).join('');
+      } catch (e) {
+        console.error('Failed to load API keys:', e);
+      }
+    }
+
+    function manageBilling() {
+      window.location.href = '/billing-portal';
+    }
+
+    async function deleteAllData() {
+      alert('Contact support@peakcut.example to request data deletion.');
+    }
+
+    document.getElementById('watermarkText').addEventListener('input', updateWatermarkPreview);
+    document.getElementById('watermarkColor').addEventListener('input', updateWatermarkPreview);
+
+    loadSettings();
+  </script>
+</body>
+</html>

@@ -340,7 +340,7 @@
         if (data.google_configured) {
           if (data.signed_in) {
             accountBar.style.display = 'flex';
-            accountBar.innerHTML = `Signed in as <strong>${escapeHtml(data.email)}</strong> · <a href="/auth/logout">Sign out</a>`;
+            accountBar.innerHTML = `Signed in as <strong>${escapeHtml(data.email)}</strong> · <a href="/settings" style="margin:0 8px">Settings</a> · <a href="/auth/logout">Sign out</a>`;
             signinGate.style.display = 'none';
             dropZone.style.display = '';
           } else {
