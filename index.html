@@ -100,6 +100,11 @@
   .dub-row .pro-tag { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 0.65rem; font-weight: 700; vertical-align: middle; }
   .dub-row .dub-hint { color: var(--muted); font-size: 0.75rem; margin: 4px 0 0; }
 
+  .quota-badge { display: inline-block; padding: 8px 16px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 20px; }
+  .quota-badge.available { background: #d1fae5; color: #065f46; }
+  .quota-badge.warning { background: #fef3c7; color: #92400e; }
+  .quota-badge.full { background: #fee2e2; color: #991b1b; }
+
   .nav-bar { display: flex; justify-content: center; gap: 24px; padding: 16px 0 20px; margin-bottom: 20px; }
   .nav-bar a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
   .nav-bar a:hover { color: var(--ink); }
@@ -251,6 +256,7 @@
     </div>
     <p class="usage-note" id="usageNote">Checking your free plan usage…</p>
 
+    <div id="quotaBadgeContainer" style="text-align:center;"></div>
     <div class="progress-track" id="progressTrack"><div class="progress-bar" id="progressBar"></div></div>
     <div id="status" role="status"></div>
     <div class="clips" id="clips"></div>
@@ -364,11 +370,13 @@
 
         notifyRow.style.display = data.email_configured ? 'block' : 'none';
 
+        const quotaBadgeContainer = document.getElementById('quotaBadgeContainer');
         if (data.pro) {
           usageNote.innerHTML = 'Pro plan — unlimited videos · <a href="/billing-portal">Manage billing</a>';
           proBadge.style.display = 'inline-block';
           adSlot.style.display = 'none';
           paywall.style.display = 'none';
+          quotaBadgeContainer.innerHTML = '';
           dubLang.disabled = false;
         } else {
           usageNote.textContent = data.remaining > 0
@@ -378,6 +386,15 @@
           adSlot.style.display = 'block';
           dubLang.disabled = true;
           dubLang.value = '';
+
+          // Show quota badge with color coding
+          let badgeClass = 'available';
+          if (data.remaining === 0) badgeClass = 'full';
+          else if (data.remaining <= 2) badgeClass = 'warning';
+
+          quotaBadgeContainer.innerHTML = data.remaining > 0
+            ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
+            : `<div class="quota-badge full">⚠️ No videos remaining — upgrade to continue</div>`;
         }
         return data;
       } catch (e) {
