@@ -53,6 +53,13 @@ def text_signal_score(text):
     return score
 
 
+def virality_score(composite):
+    """Maps the raw energy+text composite onto a 0-100 scale that reads like
+    the "virality score" competitors (OpusClip etc.) show next to clips —
+    same underlying signal, just presented the way people expect it."""
+    return int(min(99, max(35, round(composite * 4 + 15))))
+
+
 def score_candidates(video_path, segments, min_dur=3.0, max_dur=16.0):
     scored = []
     for seg in segments:
@@ -63,7 +70,10 @@ def score_candidates(video_path, segments, min_dur=3.0, max_dur=16.0):
         energy_score = max(0.0, (energy + 40) / 4)
         text_score = text_signal_score(seg["text"])
         composite = energy_score + text_score
-        scored.append({**seg, "energy_db": round(energy, 2), "composite": round(composite, 2)})
+        scored.append({
+            **seg, "energy_db": round(energy, 2), "composite": round(composite, 2),
+            "virality_score": virality_score(composite),
+        })
     scored.sort(key=lambda r: r["composite"], reverse=True)
     return scored
 
@@ -143,7 +153,8 @@ def process_video(video_path, out_dir, n_clips=3, watermark=True):
         out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark)
         manifest.append({
             "rank": i, "start": seg["start"], "end": seg["end"],
-            "score": seg["composite"], "text": seg["text"],
+            "score": seg["composite"], "virality_score": seg["virality_score"],
+            "text": seg["text"],
             "file": os.path.basename(out_path), "ok": ok,
             "error": None if ok else err,
         })

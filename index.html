@@ -56,6 +56,7 @@
   .clip-card video { width: 110px; border-radius: 10px; background: #000; flex-shrink: 0; }
   .clip-card .meta { flex: 1; min-width: 0; }
   .clip-card .rank { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
+  .virality-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; color: #fff; font-size: 0.7rem; font-weight: 700; text-transform: none; letter-spacing: normal; vertical-align: middle; }
   .clip-card p { margin: 4px 0 0; font-size: 0.9rem; color: var(--ink); }
   .clip-card .score { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
   .clip-card a.download {
@@ -361,14 +362,20 @@
       tick();
     }
 
+    function viralityColor(v) {
+      if (v >= 80) return '#22c55e';
+      if (v >= 60) return '#eab308';
+      return '#94a3b8';
+    }
+
     function renderClips(clips) {
       clipsEl.innerHTML = clips.map(c => `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
-            <div class="rank">Clip #${c.rank}</div>
+            <div class="rank">Clip #${c.rank} <span class="virality-badge" style="background:${viralityColor(c.virality_score)}">${c.virality_score}/100 Virality</span></div>
             <p>"${escapeHtml(c.text)}"</p>
-            <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s · highlight score ${c.score}</div>
+            <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
           </div>
           <a class="download" href="${encodeURI(c.url)}" download>Download</a>
         </div>
