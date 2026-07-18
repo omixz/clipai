@@ -242,6 +242,16 @@ def index():
     return (BASE_DIR / "index.html").read_text()
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return (BASE_DIR / "privacy.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms():
+    return (BASE_DIR / "terms.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     return "ok"
@@ -488,6 +498,23 @@ def create_checkout_session(request: Request):
     resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
                      httponly=True, samesite="lax")
     return resp
+
+
+@app.get("/billing-portal")
+def billing_portal(request: Request):
+    """Lets a Pro subscriber manage or cancel their own subscription without
+    emailing support — Stripe hosts the actual portal page."""
+    customer_id = request.cookies.get("clipai_customer")
+    if not customer_id:
+        return RedirectResponse(f"{config.SITE_URL}/", status_code=303)
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id, return_url=f"{config.SITE_URL}/"
+        )
+    except Exception:
+        log.exception("stripe billing portal session creation failed")
+        raise HTTPException(status_code=500, detail="Couldn't open billing portal — try again shortly.")
+    return RedirectResponse(session.url, status_code=303)
 
 
 @app.get("/confirm-checkout")

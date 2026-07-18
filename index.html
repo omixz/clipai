@@ -258,7 +258,7 @@
     </section>
   </div>
 
-  <footer>Peakcut — automatic short clips from long videos.</footer>
+  <footer>Peakcut — automatic short clips from long videos. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>
 
   <script>
     const dropZone = document.getElementById('dropZone');
@@ -310,7 +310,7 @@
         notifyRow.style.display = data.email_configured ? 'block' : 'none';
 
         if (data.pro) {
-          usageNote.textContent = 'Pro plan — unlimited videos';
+          usageNote.innerHTML = 'Pro plan — unlimited videos · <a href="/billing-portal">Manage billing</a>';
           proBadge.style.display = 'inline-block';
           adSlot.style.display = 'none';
           paywall.style.display = 'none';
