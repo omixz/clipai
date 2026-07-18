@@ -195,12 +195,21 @@ def _worker():
             _set_job(job_id, status="failed", error=str(e), finished_at=time.time())
             if job.get("notify_email"):
                 email_lib.send_failed_email(job["notify_email"], str(e))
-        except Exception:
+        except Exception as e:
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
             if not job["is_pro"]:
                 refund_free_use(job["identity"])
-            error_msg = "Processing failed — the video may be too short, silent, or an unsupported codec. Your free video was not used up."
+            error_str = str(e).lower()
+            if "no speech" in error_str or "no usable" in error_str:
+                error_msg = "No clear speech detected. Try a video with louder, clearer audio or more talking."
+            elif "too short" in error_str or "minimum" in error_str:
+                error_msg = "Video is too short. Try a video at least 30 seconds long."
+            elif "codec" in error_str or "unsupported" in error_str:
+                error_msg = "Video format not supported. Try MP4, MOV, WEBM, or MKV."
+            else:
+                error_msg = "Processing failed — the video may be too short, silent, or an unsupported codec. Try a longer video with clearer speech."
+            error_msg += " Your free video was not used up; please try again."
             _set_job(job_id, status="failed", error=error_msg, finished_at=time.time())
             if job.get("notify_email"):
                 email_lib.send_failed_email(job["notify_email"], error_msg)
