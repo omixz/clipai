@@ -206,6 +206,13 @@ def cleanup_old_jobs():
         for jid in stale:
             _jobs.pop(jid, None)
 
+    # Same idea for the IP rate-limit log — an IP with no requests in the
+    # last hour has nothing left worth remembering.
+    with _ip_log_lock:
+        empty_ips = [ip for ip, times in _ip_request_log.items() if not any(now - t < 3600 for t in times)]
+        for ip in empty_ips:
+            _ip_request_log.pop(ip, None)
+
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
@@ -242,9 +249,42 @@ def usage(request: Request):
     return resp
 
 
+def get_request_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+# Cookie-based identity is trivially bypassed by a client that never sends
+# cookies (the same gap Google sign-in closes once real credentials are
+# configured — see get_identity). Until then, this IP-based cap stops that
+# gap from turning into unlimited free encodes hammering the single-worker
+# queue: an actual cost/DoS concern on a 512MB instance, independent of the
+# per-account free-video limit above.
+MAX_PROCESS_PER_IP_PER_HOUR = 8
+_ip_request_log: dict = {}
+_ip_log_lock = threading.Lock()
+
+
+def check_ip_rate_limit(ip: str) -> bool:
+    now = time.time()
+    with _ip_log_lock:
+        window = [t for t in _ip_request_log.get(ip, []) if now - t < 3600]
+        if len(window) >= MAX_PROCESS_PER_IP_PER_HOUR:
+            _ip_request_log[ip] = window
+            return False
+        window.append(now)
+        _ip_request_log[ip] = window
+        return True
+
+
 @app.post("/process")
 async def process(request: Request, file: UploadFile = File(...)):
     cleanup_old_jobs()
+
+    if not check_ip_rate_limit(get_request_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many uploads from this network — please try again later.")
 
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         raise HTTPException(status_code=401, detail="Sign in with Google to process a video.")
