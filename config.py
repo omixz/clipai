@@ -21,6 +21,9 @@
 #    from "per browser cookie" to "per Google account" — closing the
 #    clear-your-cookies-and-get-another-free-video loophole, which is exactly
 #    how OpusClip/Vidyo.ai gate their free tiers too.
+# 4. Completion email: sign up free at https://resend.com (3,000 emails/mo,
+#    100/day, no card needed), verify a sending domain (or use their shared
+#    onboarding domain for testing), and paste the API key below.
 # ─────────────────────────────────────────────────────────────────────────
 import os
 
@@ -37,6 +40,10 @@ GOOGLE_SIGNIN_CONFIGURED = (
     GOOGLE_CLIENT_ID != "REPLACE_ME.apps.googleusercontent.com"
     and GOOGLE_CLIENT_SECRET != "REPLACE_ME"
 )
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "re_REPLACE_ME")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "Peakcut <onboarding@resend.dev>")
+EMAIL_CONFIGURED = RESEND_API_KEY != "re_REPLACE_ME"
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
 FREE_LIMIT = int(os.environ.get("FREE_LIMIT", "1"))

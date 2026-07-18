@@ -189,6 +189,11 @@
       <p class="dub-hint">Source video must be in English. Captions and voice are both translated.</p>
     </div>
 
+    <div class="dub-row" id="notifyRow" style="display:none">
+      <label for="notifyEmail">Email me when it's ready</label>
+      <input type="email" id="notifyEmail" placeholder="you@example.com" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;" />
+    </div>
+
     <div class="drop-zone" id="dropZone">
       <div class="icon">🎬</div>
       <strong>Drop a video here or click to upload</strong>
@@ -270,6 +275,8 @@
     const accountBar = document.getElementById('accountBar');
     const signinGate = document.getElementById('signinGate');
     const dubLang = document.getElementById('dubLang');
+    const notifyRow = document.getElementById('notifyRow');
+    const notifyEmail = document.getElementById('notifyEmail');
 
     const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
 
@@ -299,6 +306,8 @@
             dropZone.style.display = 'none';
           }
         }
+
+        notifyRow.style.display = data.email_configured ? 'block' : 'none';
 
         if (data.pro) {
           usageNote.textContent = 'Pro plan — unlimited videos';
@@ -352,6 +361,7 @@
       const formData = new FormData();
       formData.append('file', file);
       if (dubLang.value) formData.append('dub_lang', dubLang.value);
+      if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
 
       let jobId;
       try {

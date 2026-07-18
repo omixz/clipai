@@ -1,11 +1,14 @@
 import json
 import logging
 import queue
+import re
 import shutil
 import threading
 import time
 import uuid
 from pathlib import Path
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 import stripe
 from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
@@ -13,6 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 
 import auth
 import config
+import email_lib
 import pipeline_lib
 
 logging.basicConfig(level=logging.INFO)
@@ -174,6 +178,10 @@ def _worker():
                 Path(job["input_path"]).unlink(missing_ok=True)
             except Exception:
                 pass
+            if job.get("notify_email"):
+                email_lib.send_done_email(
+                    job["notify_email"], [c["url"] for c in clips], result["duration"], job["is_pro"]
+                )
         except ValueError as e:
             # e.g. dubbing requested on a non-English source video — a
             # user-input problem, not a processing failure, so show the
@@ -183,14 +191,17 @@ def _worker():
             if not job["is_pro"]:
                 refund_free_use(job["identity"])
             _set_job(job_id, status="failed", error=str(e), finished_at=time.time())
+            if job.get("notify_email"):
+                email_lib.send_failed_email(job["notify_email"], str(e))
         except Exception:
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
             if not job["is_pro"]:
                 refund_free_use(job["identity"])
-            _set_job(job_id, status="failed",
-                     error="Processing failed — the video may be too short, silent, or an unsupported codec. Your free video was not used up.",
-                     finished_at=time.time())
+            error_msg = "Processing failed — the video may be too short, silent, or an unsupported codec. Your free video was not used up."
+            _set_job(job_id, status="failed", error=error_msg, finished_at=time.time())
+            if job.get("notify_email"):
+                email_lib.send_failed_email(job["notify_email"], error_msg)
 
 
 threading.Thread(target=_worker, daemon=True).start()
@@ -253,6 +264,7 @@ def usage(request: Request):
         "google_configured": config.GOOGLE_SIGNIN_CONFIGURED,
         "signed_in": account is not None,
         "email": account["email"] if account else None,
+        "email_configured": config.EMAIL_CONFIGURED,
     })
     resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
                      httponly=True, samesite="lax")
@@ -290,7 +302,8 @@ def check_ip_rate_limit(ip: str) -> bool:
 
 
 @app.post("/process")
-async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None)):
+async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None),
+                   notify_email: str | None = Form(None)):
     cleanup_old_jobs()
 
     if not check_ip_rate_limit(get_request_ip(request)):
@@ -312,6 +325,9 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
             raise HTTPException(status_code=400, detail="Unsupported dub language.")
         if not is_pro:
             raise HTTPException(status_code=402, detail="Dubbing is a Pro feature. Upgrade to Pro to dub clips into other languages.")
+
+    if notify_email and not EMAIL_RE.match(notify_email):
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid email address.")
 
     if _job_queue.full():
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
@@ -346,7 +362,8 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
     _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
-             input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang)
+             input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
+             notify_email=notify_email)
     try:
         _job_queue.put_nowait(job_id)
     except queue.Full:
