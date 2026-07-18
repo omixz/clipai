@@ -6,6 +6,8 @@ import shutil
 import threading
 import time
 import uuid
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -416,6 +418,37 @@ def get_clip(job_id: str, filename: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Not found.")
     return FileResponse(str(path))
+
+
+@app.get("/jobs/{job_id}/download/all")
+def download_all_clips(job_id: str):
+    if "/" in job_id or ".." in job_id:
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+    job_dir = JOBS_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    job = _get_job(job_id)
+    if not job or job.get("status") != "done":
+        raise HTTPException(status_code=400, detail="Job not complete or not found.")
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for clip in job.get("clips", []):
+            clip_path = job_dir / clip["file"]
+            if clip_path.exists():
+                zf.write(clip_path, arcname=clip["file"])
+
+        manifest_path = job_dir / "manifest.json"
+        if manifest_path.exists():
+            zf.write(manifest_path, arcname="manifest.json")
+
+    zip_buffer.seek(0)
+    return FileResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=peakcut_{job_id[:8]}.zip"}
+    )
 
 
 # ── Sign in with Google ──────────────────────────────────────────────────────

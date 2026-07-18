@@ -437,7 +437,7 @@
           stopped = true;
           progressBar.style.width = '100%';
           statusEl.textContent = `Done — ${data.clips.length} clips from your ${Math.round(data.duration)}s video.`;
-          renderClips(data.clips);
+          renderClips(data.clips, jobId);
           setBusy(false);
           await refreshUsage();
         } else if (data.status === 'failed') {
@@ -456,8 +456,12 @@
       return '#94a3b8';
     }
 
-    function renderClips(clips) {
-      clipsEl.innerHTML = clips.map(c => `
+    function renderClips(clips, jobId) {
+      const header = jobId ? `<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center">
+        <h2 style="margin:0;flex:1">Your clips</h2>
+        <a href="/jobs/${jobId}/download/all" class="download" style="white-space:nowrap">📦 Download All as ZIP</a>
+      </div>` : '';
+      clipsEl.innerHTML = header + clips.map(c => `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
