@@ -137,6 +137,12 @@
 
   .pro-badge { display: inline-block; background: #1f9d55; color: #fff; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 10px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
 
+  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
+  .queue-item .name { flex: 1; color: var(--ink); }
+  .queue-item .size { color: var(--muted); font-size: 0.85rem; margin-right: 12px; }
+  .queue-item button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 1.2rem; }
+  .queue-item button:hover { color: var(--ink); }
+
   .ad-slot { margin: 20px 0 40px; padding: 16px; border: 1px dashed var(--border); border-radius: 10px; text-align: center; color: var(--muted); font-size: 0.8rem; background: var(--card); }
 
   section.content { margin: 60px 0; }
@@ -221,10 +227,16 @@
 
     <div class="drop-zone" id="dropZone">
       <div class="icon">🎬</div>
-      <strong>Drop a video here or click to upload</strong>
+      <strong>Drop video(s) here or click to upload</strong>
       <p>MP4, MOV, WEBM, MKV — up to a few minutes long works best on the free plan</p>
-      <p style="margin-top:12px;font-size:0.9rem;color:var(--muted)">💡 Works best with clear speech: podcasts, interviews, talks, sermons. Music-only won't work.</p>
-      <input type="file" id="fileInput" accept="video/*" />
+      <p style="margin-top:12px;font-size:0.9rem;color:var(--muted)">💡 Upload one or multiple videos. Works best with clear speech: podcasts, interviews, talks, sermons. Music-only won't work.</p>
+      <input type="file" id="fileInput" accept="video/*" multiple />
+    </div>
+
+    <div id="batchQueue" style="display:none;margin-top:20px;">
+      <h3 style="font-size:1rem;margin-bottom:12px;">Queued videos</h3>
+      <div id="queueList" style="display:grid;gap:12px;"></div>
+      <button class="primary" id="processBatchBtn" style="margin-top:16px;">Process all videos</button>
     </div>
     <p class="usage-note" id="usageNote">Checking your free plan usage…</p>
 
@@ -304,8 +316,12 @@
     const clipFormat = document.getElementById('clipFormat');
     const notifyRow = document.getElementById('notifyRow');
     const notifyEmail = document.getElementById('notifyEmail');
+    const batchQueue = document.getElementById('batchQueue');
+    const queueList = document.getElementById('queueList');
+    const processBatchBtn = document.getElementById('processBatchBtn');
 
     const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
+    let fileQueue = []; // for batch uploads
 
     function escapeHtml(str) {
       const div = document.createElement('div');
@@ -361,16 +377,89 @@
       window.location.href = '/pricing';
     });
 
+    function addFilesToQueue(files) {
+      for (let i = 0; i < files.length; i++) {
+        fileQueue.push(files[i]);
+      }
+      updateQueueDisplay();
+      if (fileQueue.length > 0) {
+        batchQueue.style.display = 'block';
+      }
+    }
+
+    function updateQueueDisplay() {
+      queueList.innerHTML = fileQueue.map((f, i) => {
+        const sizeStr = (f.size / 1024 / 1024).toFixed(1);
+        return `
+          <div class="queue-item">
+            <span class="name">${escapeHtml(f.name)}</span>
+            <span class="size">${sizeStr}MB</span>
+            <button type="button" onclick="removeFromQueue(${i})">✕</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    window.removeFromQueue = function(i) {
+      fileQueue.splice(i, 1);
+      updateQueueDisplay();
+      if (fileQueue.length === 0) batchQueue.style.display = 'none';
+    };
+
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
     dropZone.addEventListener('drop', (e) => {
       e.preventDefault();
       dropZone.classList.remove('drag');
-      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files.length) addFilesToQueue(e.dataTransfer.files);
     });
     fileInput.addEventListener('change', () => {
-      if (fileInput.files.length) handleFile(fileInput.files[0]);
+      if (fileInput.files.length) addFilesToQueue(fileInput.files);
+    });
+
+    processBatchBtn.addEventListener('click', async () => {
+      if (fileQueue.length === 0) return;
+      processBatchBtn.disabled = true;
+      let jobIds = [];
+      clipsEl.innerHTML = '';
+      batchQueue.style.display = 'none';
+      for (let i = 0; i < fileQueue.length; i++) {
+        const file = fileQueue[i];
+        statusEl.textContent = `Uploading ${i + 1} of ${fileQueue.length}: ${file.name}…`;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('clip_format', clipFormat.value);
+        if (dubLang.value) formData.append('dub_lang', dubLang.value);
+        if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+        try {
+          const res = await fetch('/process', { method: 'POST', body: formData });
+          if (res.status === 402) {
+            statusEl.textContent = '';
+            paywall.style.display = 'block';
+            await refreshUsage();
+            processBatchBtn.disabled = false;
+            return;
+          }
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            statusEl.textContent = `Error processing ${file.name}: ${err.detail || res.statusText}`;
+            processBatchBtn.disabled = false;
+            return;
+          }
+          const data = await res.json();
+          jobIds.push(data.job_id);
+        } catch (e) {
+          statusEl.textContent = `Upload failed for ${file.name} — check your connection and try again.`;
+          processBatchBtn.disabled = false;
+          return;
+        }
+      }
+      fileQueue = [];
+      fileInput.value = '';
+      statusEl.textContent = `Processing ${jobIds.length} video(s)…`;
+      pollMultipleJobs(jobIds, Date.now());
+      processBatchBtn.disabled = false;
     });
 
     function setBusy(busy) {
@@ -424,6 +513,51 @@
       }
 
       pollJob(jobId, Date.now());
+    }
+
+    async function pollMultipleJobs(jobIds, startedAt) {
+      let completed = [];
+      let failed = [];
+      let stopped = false;
+
+      const tick = async () => {
+        if (stopped) return;
+        try {
+          const results = await Promise.all(jobIds.map(jid => fetch(`/job/${jid}`).then(r => r.json().catch(() => null))));
+
+          for (let i = 0; i < jobIds.length; i++) {
+            const data = results[i];
+            if (!data) continue;
+            const jid = jobIds[i];
+
+            if (data.status === 'done' && !completed.includes(jid)) {
+              completed.push(jid);
+              renderClips(data.clips, jid);
+            } else if (data.status === 'failed' && !failed.includes(jid)) {
+              failed.push(jid);
+            }
+          }
+
+          const elapsed = Math.round((Date.now() - startedAt) / 1000);
+          const done = completed.length + failed.length;
+          const allDone = done === jobIds.length;
+
+          if (allDone) {
+            stopped = true;
+            progressBar.style.width = '100%';
+            statusEl.textContent = `Done — ${completed.length}/${jobIds.length} videos processed successfully.`;
+            setBusy(false);
+            await refreshUsage();
+          } else {
+            progressBar.style.width = Math.min(95, (elapsed / (EXPECTED_SECONDS * 1.5)) * 100) + '%';
+            statusEl.textContent = `Processing ${jobIds.length - done} of ${jobIds.length} videos… (${elapsed}s)`;
+            setTimeout(tick, 3000);
+          }
+        } catch (e) {
+          setTimeout(tick, 5000);
+        }
+      };
+      tick();
     }
 
     async function pollJob(jobId, startedAt) {
