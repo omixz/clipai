@@ -4,7 +4,7 @@ import subprocess
 import os
 from faster_whisper import WhisperModel
 
-WATERMARK = "FREE PLAN — clipai.app"
+WATERMARK = "FREE PLAN — Peakcut"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny")
 
 _model = None

@@ -1,4 +1,4 @@
-# ClipAI
+# Peakcut
 
 Free AI video clipper: upload a video, get back the top 3 auto-picked, auto-captioned
 short clips. No paid APIs — self-hosted Whisper for transcription, ffmpeg for rendering,
@@ -21,8 +21,8 @@ Open http://localhost:8000
 ## Run with Docker
 
 ```bash
-docker build -t clipai .
-docker run -p 8000:8000 --env-file .env clipai
+docker build -t peakcut .
+docker run -p 8000:8000 --env-file .env peakcut
 ```
 
 The Dockerfile warms the Whisper model into the image at build time, so the
