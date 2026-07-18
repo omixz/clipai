@@ -174,7 +174,7 @@ def _worker():
             for clip in clips:
                 clip["url"] = f"/jobs/{job_id}/{clip['file']}"
             _set_job(job_id, status="done", clips=clips, duration=result["duration"],
-                     finished_at=time.time())
+                     language=result.get("language"), finished_at=time.time())
             # the source upload is no longer needed once clips exist — free the disk
             try:
                 Path(job["input_path"]).unlink(missing_ok=True)
@@ -405,6 +405,8 @@ def job_status(job_id: str):
     elif job["status"] == "done":
         out["clips"] = job["clips"]
         out["duration"] = job["duration"]
+        out["language"] = job.get("language", "unknown")
+        out["language_auto"] = job.get("language") is not None  # True if auto-detected, False if not
     elif job["status"] == "failed":
         out["error"] = job.get("error", "Processing failed.")
     return out

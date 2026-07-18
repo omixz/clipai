@@ -438,7 +438,8 @@
         } else if (data.status === 'done') {
           stopped = true;
           progressBar.style.width = '100%';
-          statusEl.textContent = `Done — ${data.clips.length} clips from your ${Math.round(data.duration)}s video.`;
+          const lang = data.language ? ` (${data.language})` : '';
+          statusEl.textContent = `Done — ${data.clips.length} clips from your ${Math.round(data.duration)}s video${lang}.`;
           renderClips(data.clips, jobId);
           setBusy(false);
           await refreshUsage();

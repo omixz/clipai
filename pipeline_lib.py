@@ -208,4 +208,4 @@ def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None)
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
 
-    return {"duration": duration, "clips": manifest}
+    return {"duration": duration, "clips": manifest, "language": source_lang}
