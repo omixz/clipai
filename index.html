@@ -194,6 +194,16 @@
       <p class="dub-hint">Source video must be in English. Captions and voice are both translated.</p>
     </div>
 
+    <div class="dub-row">
+      <label for="clipFormat">Clip format</label>
+      <select id="clipFormat">
+        <option value="vertical">Vertical 9:16 (TikTok, Reels)</option>
+        <option value="square">Square 1:1 (Instagram, Pinterest)</option>
+        <option value="horizontal">Horizontal 16:9 (YouTube, LinkedIn)</option>
+      </select>
+      <p class="dub-hint">Choose the format best for your platform.</p>
+    </div>
+
     <div class="dub-row" id="notifyRow" style="display:none">
       <label for="notifyEmail">Email me when it's ready</label>
       <input type="email" id="notifyEmail" placeholder="you@example.com" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;" />
@@ -281,6 +291,7 @@
     const accountBar = document.getElementById('accountBar');
     const signinGate = document.getElementById('signinGate');
     const dubLang = document.getElementById('dubLang');
+    const clipFormat = document.getElementById('clipFormat');
     const notifyRow = document.getElementById('notifyRow');
     const notifyEmail = document.getElementById('notifyEmail');
 
@@ -366,6 +377,7 @@
 
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('clip_format', clipFormat.value);
       if (dubLang.value) formData.append('dub_lang', dubLang.value);
       if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
 
