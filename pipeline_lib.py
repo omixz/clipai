@@ -110,7 +110,21 @@ def srt_timestamp(t):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def build_word_chunk_srt(words, clip_start, chunk_size=4):
+# Caption-only cleanup — filler words are still spoken in the audio (we don't
+# cut the video), just not shown in the burned-in captions. Matches the
+# "clean transcript" feature in Descript/CapCut. Kept to unambiguous filler
+# words only, not judgment calls like "so"/"actually" that are often load-
+# bearing in a sentence.
+FILLER_WORDS = {"um", "uh", "uhh", "umm", "erm", "ah", "hm", "hmm"}
+
+
+def _is_filler(word_text):
+    return re.sub(r"[^a-z]", "", word_text.lower()) in FILLER_WORDS
+
+
+def build_word_chunk_srt(words, clip_start, chunk_size=4, clean_fillers=True):
+    if clean_fillers:
+        words = [w for w in words if not _is_filler(w["word"])]
     lines = []
     idx = 1
     for i in range(0, len(words), chunk_size):
