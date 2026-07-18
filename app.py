@@ -354,7 +354,7 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
     if not is_pro and not reserve_free_use(identity):
-        raise HTTPException(status_code=402, detail="Free plan limit reached (1 video). Upgrade to Pro for unlimited clips.")
+        raise HTTPException(status_code=402, detail=f"Free plan limit reached ({config.FREE_LIMIT} videos/month). Upgrade to Pro for unlimited clips.")
 
     job_id = str(uuid.uuid4())[:8]
     job_dir = JOBS_DIR / job_id
