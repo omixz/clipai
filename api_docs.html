@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>API Documentation — Peakcut</title>
+<meta name="description" content="Integrate Peakcut's AI clip generation into your application via REST API." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
+    --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Monaco", monospace; background: var(--paper); color: var(--ink); line-height: 1.6; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 40px 0 20px; }
+  .brand { font-size: 1rem; font-weight: 800; margin-bottom: 8px; }
+  h1 { font-size: 2rem; margin: 10px 0 12px; }
+  header > p { color: var(--muted); }
+
+  .nav-bar { display: flex; justify-content: center; gap: 24px; padding: 16px 0 30px; border-bottom: 1px solid var(--border); margin-bottom: 40px; }
+  .nav-bar a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+  .nav-bar a:hover { color: var(--ink); }
+  .nav-bar a.active { color: var(--accent); }
+
+  .intro { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 30px; }
+  .intro h2 { margin-top: 0; }
+
+  .section { margin-bottom: 40px; }
+  .section h2 { font-size: 1.3rem; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+  .section h3 { font-size: 1.1rem; margin-top: 20px; margin-bottom: 10px; }
+
+  code, pre { background: #f0eef8; border-radius: 6px; padding: 2px 6px; font-family: Monaco, "Courier New", monospace; font-size: 0.9em; }
+  pre { padding: 12px 16px; overflow-x: auto; line-height: 1.5; }
+  .code-block { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; overflow-x: auto; }
+  .code-block code { background: none; padding: 0; }
+
+  .endpoint { background: var(--card); border-left: 4px solid var(--accent); border-radius: 0 var(--radius) var(--radius) 0; padding: 16px; margin-bottom: 16px; }
+  .method { display: inline-block; font-weight: 700; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; margin-right: 8px; }
+  .method.post { background: #fef3c7; color: #92400e; }
+  .method.get { background: #dbeafe; color: #0c4a6e; }
+
+  .params, .response { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  .params h4, .response h4 { margin-top: 0; }
+  .param { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .param:last-child { border-bottom: none; padding-bottom: 0; }
+  .param-name { font-weight: 600; color: var(--accent); }
+  .param-type { color: var(--muted); font-size: 0.9em; }
+
+  .pricing-table { width: 100%; border-collapse: collapse; }
+  .pricing-table th, .pricing-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .pricing-table th { background: #f3f0ff; font-weight: 600; }
+  .pricing-table tr:hover { background: #fef3f8; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 40px 0 50px; }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">🎬 Peakcut API</div>
+      <h1>AI Video Clipping via REST API</h1>
+      <p>Programmatically turn long videos into short, captioned clips.</p>
+    </header>
+
+    <div class="nav-bar">
+      <a href="/">App</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/api/docs" style="color: var(--accent); font-weight: 700;">API</a>
+    </div>
+
+    <div class="intro">
+      <h2>Getting Started</h2>
+      <p>The Peakcut API lets you process videos and fetch clips programmatically. All requests must include a valid API key in the <code>Authorization</code> header:</p>
+      <div class="code-block">
+        <pre>Authorization: Bearer pk_your_api_key_here</pre>
+      </div>
+      <p><strong>Generate your first API key:</strong> Sign in to Peakcut and go to API settings (link in your account menu).</p>
+      <p><strong>Pricing:</strong> Free ($0/mo, 100 calls/month), Pro ($15/mo, 500 calls/month), or Pro Plus ($29/mo, 2000 calls/month).</p>
+    </div>
+
+    <div class="section">
+      <h2>Endpoints</h2>
+
+      <div class="endpoint">
+        <span class="method post">POST</span> <code>/api/v1/process</code>
+        <p>Submit a video for processing.</p>
+
+        <div class="params">
+          <h4>Request</h4>
+          <div class="param">
+            <div class="param-name">file</div>
+            <div class="param-type">multipart/form-data (required)</div>
+            <p>Video file (MP4, MOV, WEBM, MKV). Max size: 300MB.</p>
+          </div>
+          <div class="param">
+            <div class="param-name">clip_format</div>
+            <div class="param-type">string (optional, default: "vertical")</div>
+            <p>Output format: <code>vertical</code> (9:16), <code>square</code> (1:1), or <code>horizontal</code> (16:9).</p>
+          </div>
+        </div>
+
+        <div class="response">
+          <h4>Response (200)</h4>
+          <div class="code-block"><pre>{
+  "job_id": "abc12345",
+  "status": "queued"
+}</pre></div>
+          <p>Use the <code>job_id</code> to poll for results with <code>GET /api/v1/clips/{job_id}</code>.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <span class="method get">GET</span> <code>/api/v1/clips/{job_id}</code>
+        <p>Get clip results from a completed job.</p>
+
+        <div class="params">
+          <h4>Request</h4>
+          <div class="param">
+            <div class="param-name">job_id</div>
+            <div class="param-type">path parameter (required)</div>
+            <p>The job ID returned from <code>/api/v1/process</code>.</p>
+          </div>
+        </div>
+
+        <div class="response">
+          <h4>Response (200, processing)</h4>
+          <div class="code-block"><pre>{
+  "status": "processing",
+  "progress": 45
+}</pre></div>
+          <h4>Response (200, done)</h4>
+          <div class="code-block"><pre>{
+  "status": "done",
+  "clips": [
+    {
+      "rank": 1,
+      "text": "This is the best moment from your video",
+      "virality_score": 87,
+      "download_url": "https://clipai-tgnv.onrender.com/jobs/abc12345/peakcut_rank1_v87_vertical.mp4"
+    }
+  ]
+}</pre></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Example: cURL</h2>
+      <div class="code-block"><pre>
+# Submit a video
+curl -X POST https://clipai-tgnv.onrender.com/api/v1/process \
+  -H "Authorization: Bearer pk_your_api_key_here" \
+  -F "file=@video.mp4" \
+  -F "clip_format=vertical"
+
+# Response: {"job_id": "abc12345", "status": "queued"}
+
+# Poll for results (repeat until status is "done")
+curl https://clipai-tgnv.onrender.com/api/v1/clips/abc12345 \
+  -H "Authorization: Bearer pk_your_api_key_here"
+      </pre></div>
+    </div>
+
+    <div class="section">
+      <h2>Example: Python</h2>
+      <div class="code-block"><pre>
+import requests
+import time
+
+API_KEY = "pk_your_api_key_here"
+BASE_URL = "https://clipai-tgnv.onrender.com"
+
+# Submit video
+with open("video.mp4", "rb") as f:
+    resp = requests.post(
+        f"{BASE_URL}/api/v1/process",
+        headers={"Authorization": f"Bearer {API_KEY}"},
+        files={"file": f},
+        data={"clip_format": "vertical"}
+    )
+    job_id = resp.json()["job_id"]
+
+# Poll for results
+while True:
+    resp = requests.get(
+        f"{BASE_URL}/api/v1/clips/{job_id}",
+        headers={"Authorization": f"Bearer {API_KEY}"}
+    )
+    result = resp.json()
+    if result["status"] == "done":
+        for clip in result["clips"]:
+            print(f"Clip #{clip['rank']}: {clip['text']}")
+            print(f"Download: {clip['download_url']}")
+        break
+    elif result["status"] == "error":
+        print(f"Error: {result['error']}")
+        break
+    time.sleep(5)  # Poll every 5 seconds
+      </pre></div>
+    </div>
+
+    <div class="section">
+      <h2>API Limits & Pricing</h2>
+      <table class="pricing-table">
+        <tr>
+          <th>Tier</th>
+          <th>Monthly Cost</th>
+          <th>Monthly Calls</th>
+          <th>Best For</th>
+        </tr>
+        <tr>
+          <td><strong>Free</strong></td>
+          <td>$0</td>
+          <td>100 calls</td>
+          <td>Testing and low-volume integrations</td>
+        </tr>
+        <tr>
+          <td><strong>Pro</strong></td>
+          <td>$15</td>
+          <td>500 calls</td>
+          <td>Small teams and content creators</td>
+        </tr>
+        <tr>
+          <td><strong>Pro Plus</strong></td>
+          <td>$29</td>
+          <td>2000 calls</td>
+          <td>Agencies, platforms, and high-volume users</td>
+        </tr>
+      </table>
+      <p style="color: var(--muted); font-size: 0.9em; margin-top: 12px;">Need more? Contact <a href="mailto:support@peakcut.example" style="color:var(--accent)">support@peakcut.example</a> for custom plans.</p>
+    </div>
+
+    <div class="section">
+      <h2>Error Handling</h2>
+      <p><strong>401 Unauthorized:</strong> Invalid or missing API key. Check your <code>Authorization</code> header.</p>
+      <p><strong>429 Too Many Requests:</strong> You've exceeded your monthly API call limit for your tier.</p>
+      <p><strong>413 Payload Too Large:</strong> Video file exceeds 300MB. Try a shorter clip.</p>
+      <p><strong>400 Bad Request:</strong> Invalid parameters (e.g., unsupported clip_format).</p>
+      <p><strong>503 Service Unavailable:</strong> Server queue is full. Wait a few moments and retry.</p>
+    </div>
+
+    <div class="section">
+      <h2>FAQ</h2>
+      <p><strong>Can I process multiple videos in parallel?</strong> Yes, submit them sequentially and poll all job IDs. We process one at a time internally, so jobs will queue.</p>
+      <p><strong>How long does processing take?</strong> Typically 1-3 minutes depending on video length and server load.</p>
+      <p><strong>Are API calls refundable?</strong> No, since videos are processed immediately. Plan your monthly usage carefully or contact support.</p>
+      <p><strong>Can I upgrade my API key?</strong> Yes, create a new key on your account page — it will have your current subscription tier.</p>
+    </div>
+  </div>
+
+  <footer>
+    Peakcut — automatic short clips from long videos.
+    <a href="/privacy">Privacy</a> ·
+    <a href="/terms">Terms</a>
+  </footer>
+</body>
+</html>

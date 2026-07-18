@@ -75,8 +75,9 @@
     </header>
 
     <div class="nav-bar">
-      <a href="/" class="active">App</a>
-      <a href="/pricing" style="color: var(--accent);">Pricing</a>
+      <a href="/">App</a>
+      <a href="/pricing" style="color: var(--accent); font-weight: 700;">Pricing</a>
+      <a href="/api/docs">API</a>
       <a href="/#faq">FAQ</a>
     </div>
 
@@ -130,6 +131,58 @@
           <li>Multi-language dubbing (ES, FR, PT)</li>
         </ul>
         <button class="plan-cta primary" onclick="window.location.href='/create-checkout-session-plus'">Upgrade to Pro Plus</button>
+      </div>
+    </div>
+
+    <h2 style="text-align: center; margin-top: 60px; margin-bottom: 30px;">Or use Peakcut programmatically</h2>
+
+    <div class="pricing-grid">
+      <!-- API Free -->
+      <div class="plan-card">
+        <div class="plan-name">API Free</div>
+        <p class="plan-desc">For developers</p>
+        <div class="plan-price">$0<span class="period">/month</span></div>
+        <p class="plan-subtext">100 calls per month</p>
+        <ul class="plan-features">
+          <li>REST API access</li>
+          <li>100 API calls/month</li>
+          <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
+          <li class="disabled">Priority support</li>
+          <li class="disabled">SLA guarantee</li>
+        </ul>
+        <a href="/api/docs" class="plan-cta secondary">Read API Docs</a>
+      </div>
+
+      <!-- API Pro -->
+      <div class="plan-card featured">
+        <div class="plan-name">API Pro</div>
+        <p class="plan-desc">For integrations</p>
+        <div class="plan-price">$15<span class="period">/month</span></div>
+        <p class="plan-subtext">500 calls per month</p>
+        <ul class="plan-features">
+          <li>REST API access</li>
+          <li>500 API calls/month</li>
+          <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
+          <li>Priority processing queue</li>
+          <li class="disabled">SLA guarantee</li>
+        </ul>
+        <button class="plan-cta primary" onclick="window.location.href='/create-checkout-session'">Upgrade to API Pro</button>
+      </div>
+
+      <!-- API Pro Plus -->
+      <div class="plan-card">
+        <div class="plan-name">API Pro Plus</div>
+        <p class="plan-desc">For platforms</p>
+        <div class="plan-price">$29<span class="period">/month</span></div>
+        <p class="plan-subtext">2000 calls per month</p>
+        <ul class="plan-features">
+          <li>REST API access</li>
+          <li>2000 API calls/month</li>
+          <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
+          <li>Priority processing queue</li>
+          <li>99.5% uptime SLA</li>
+        </ul>
+        <button class="plan-cta primary" onclick="window.location.href='/create-checkout-session-plus'">Upgrade to API Pro Plus</button>
       </div>
     </div>
 

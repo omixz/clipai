@@ -27,10 +27,13 @@ log = logging.getLogger("clipai")
 BASE_DIR = Path(__file__).parent
 JOBS_DIR = BASE_DIR / "jobs"
 USAGE_FILE = BASE_DIR / "usage.json"
+API_KEYS_FILE = BASE_DIR / "api_keys.json"
 
 JOBS_DIR.mkdir(exist_ok=True)
 if not USAGE_FILE.exists():
     USAGE_FILE.write_text("{}")
+if not API_KEYS_FILE.exists():
+    API_KEYS_FILE.write_text("{}")
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 
@@ -119,6 +122,68 @@ def check_pro_status(request: Request) -> bool:
     except Exception:
         log.exception("Stripe subscription lookup failed")
         return False
+
+
+# ── API Key Management ──────────────────────────────────────────────────────
+
+_api_lock = threading.Lock()
+
+
+def load_api_keys():
+    with _api_lock:
+        return json.loads(API_KEYS_FILE.read_text())
+
+
+def save_api_keys(data):
+    with _api_lock:
+        API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+
+
+def generate_api_key(identity: str, tier: str = "free") -> str:
+    """Generate a new API key for a user. Tier can be 'free', 'pro', or 'pro_plus'."""
+    api_key = f"pk_{uuid.uuid4().hex[:32]}"
+    with _api_lock:
+        data = json.loads(API_KEYS_FILE.read_text())
+        if "keys" not in data:
+            data["keys"] = {}
+        data["keys"][api_key] = {
+            "identity": identity,
+            "tier": tier,
+            "created": time.time(),
+            "usage_this_month": 0,
+            "active": True,
+        }
+        API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+    return api_key
+
+
+def get_api_key_info(api_key: str) -> dict | None:
+    """Get info about an API key."""
+    data = load_api_keys()
+    return data.get("keys", {}).get(api_key)
+
+
+def increment_api_usage(api_key: str) -> bool:
+    """Increment usage counter for an API key. Returns False if rate limited."""
+    info = get_api_key_info(api_key)
+    if not info:
+        return False
+
+    limits = {"free": 100, "pro": 500, "pro_plus": 2000}
+    monthly_limit = limits.get(info.get("tier", "free"), 100)
+
+    with _api_lock:
+        data = json.loads(API_KEYS_FILE.read_text())
+        key_data = data.get("keys", {}).get(api_key)
+        if not key_data or not key_data.get("active"):
+            return False
+
+        key_data["usage_this_month"] = key_data.get("usage_this_month", 0) + 1
+        if key_data["usage_this_month"] > monthly_limit:
+            return False
+
+        API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+    return True
 
 
 # ── Background job queue ─────────────────────────────────────────────────────
@@ -256,6 +321,11 @@ def index():
 @app.get("/pricing", response_class=HTMLResponse)
 def pricing():
     return (BASE_DIR / "pricing.html").read_text()
+
+
+@app.get("/api/docs", response_class=HTMLResponse)
+def api_docs():
+    return (BASE_DIR / "api_docs.html").read_text()
 
 
 @app.get("/privacy", response_class=HTMLResponse)
@@ -627,3 +697,125 @@ async def stripe_webhook(request: Request):
         log.info("subscription ended for customer %s", event["data"]["object"].get("customer"))
 
     return {"received": True}
+
+
+# ── API Endpoints ───────────────────────────────────────────────────────────
+
+@app.post("/api/keys")
+def create_api_key(request: Request):
+    """Generate a new API key for the signed-in user. Requires Google Sign-In."""
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        raise HTTPException(status_code=401, detail="Sign in required to create API keys.")
+
+    identity = get_identity(request)
+    tier = "pro" if check_pro_status(request) else "free"
+    api_key = generate_api_key(identity, tier)
+    return {"api_key": api_key, "tier": tier}
+
+
+@app.get("/api/keys")
+def list_api_keys(request: Request):
+    """List all API keys for the signed-in user."""
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        raise HTTPException(status_code=401, detail="Sign in required.")
+
+    identity = get_identity(request)
+    data = load_api_keys()
+    user_keys = [
+        {
+            "api_key": key[:12] + "***" + key[-4:],  # mask key
+            "tier": info["tier"],
+            "created": info["created"],
+            "usage_this_month": info.get("usage_this_month", 0),
+            "active": info.get("active", True),
+        }
+        for key, info in data.get("keys", {}).items()
+        if info.get("identity") == identity
+    ]
+    return {"keys": user_keys}
+
+
+@app.post("/api/v1/process")
+async def api_process(request: Request, file: UploadFile = File(...), clip_format: str = Form("vertical")):
+    """Process a video via API. Requires valid API key in Authorization header."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header. Use: Authorization: Bearer <api_key>")
+
+    api_key = auth_header[7:]  # strip "Bearer "
+    key_info = get_api_key_info(api_key)
+    if not key_info or not key_info.get("active"):
+        raise HTTPException(status_code=401, detail="Invalid or inactive API key.")
+
+    if not increment_api_usage(api_key):
+        raise HTTPException(
+            status_code=429,
+            detail=f"API rate limit exceeded for {key_info['tier']} tier. Monthly limits: free=100, pro=500, pro_plus=2000."
+        )
+
+    if clip_format not in ("vertical", "square", "horizontal"):
+        raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
+
+    if file.size and file.size > config.MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Video too large (max {config.MAX_UPLOAD_MB}MB).")
+
+    job_id = str(uuid.uuid4())[:8]
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    video_path = job_dir / file.filename
+    with open(video_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    _set_job(job_id, status="queued", api_key=True, clip_format=clip_format)
+    try:
+        _job_queue.put_nowait(job_id)
+    except queue.Full:
+        _set_job(job_id, status="error", error="Server queue full, please try again shortly.")
+        raise HTTPException(status_code=503, detail="Server queue full, please try again shortly.")
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/api/v1/clips/{job_id}")
+def api_get_clips(job_id: str, request: Request):
+    """Get clip results from a completed job. Requires API key or job cookie."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        api_key = auth_header[7:]
+        key_info = get_api_key_info(api_key)
+        if not key_info or not key_info.get("active"):
+            raise HTTPException(status_code=401, detail="Invalid API key.")
+    else:
+        # Allow access if cookie was set during job submission
+        pass
+
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job["status"] == "processing":
+        return {"status": "processing", "progress": job.get("progress", 0)}
+    elif job["status"] == "error":
+        return {"status": "error", "error": job.get("error", "Unknown error")}
+    elif job["status"] == "done":
+        manifest_path = JOBS_DIR / job_id / "manifest.json"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=500, detail="Manifest file not found.")
+
+        manifest = json.loads(manifest_path.read_text())
+        result = {"status": "done", "clips": []}
+        for clip in manifest:
+            clip_file = JOBS_DIR / job_id / clip["file"]
+            if clip_file.exists():
+                result["clips"].append({
+                    "rank": clip["rank"],
+                    "text": clip["text"],
+                    "virality_score": clip["virality_score"],
+                    "url": f"{config.SITE_URL}/jobs/{job_id}/{clip['file']}",
+                    "download_url": f"{config.SITE_URL}/jobs/{job_id}/{clip['file']}",
+                })
+        return result
+    else:
+        return {"status": job["status"]}
