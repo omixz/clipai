@@ -50,6 +50,19 @@ PAYPAL_PLAN_ID_PRO = os.environ.get("PAYPAL_PLAN_ID_PRO", "")
 PAYPAL_PLAN_ID_PLUS = os.environ.get("PAYPAL_PLAN_ID_PLUS", "")
 PAYPAL_WEBHOOK_ID = os.environ.get("PAYPAL_WEBHOOK_ID", "")
 PAYPAL_CONFIGURED = bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)
+
+# Direct bank transfer -- no processor in the loop at all. Customers wire/ACH
+# straight to this account; there's no API to check payment status against,
+# so upgrades are granted manually (see the /admin/billing routes in app.py)
+# once a payment with the matching reference actually shows up. Takes
+# priority over PayPal in get_account_tier/checkout when configured, since
+# it's the path that actually works without ID verification.
+BANK_NAME = os.environ.get("BANK_NAME", "")
+BANK_ACCOUNT_NAME = os.environ.get("BANK_ACCOUNT_NAME", "")
+BANK_ACCOUNT_NUMBER = os.environ.get("BANK_ACCOUNT_NUMBER", "")
+BANK_ROUTING_NUMBER = os.environ.get("BANK_ROUTING_NUMBER", "")
+BANK_PAYMENT_CONFIGURED = bool(BANK_ACCOUNT_NUMBER and BANK_ROUTING_NUMBER)
+
 ADSENSE_PUBLISHER_ID = os.environ.get("ADSENSE_PUBLISHER_ID", "ca-pub-5158161193547085")
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "REPLACE_ME.apps.googleusercontent.com")

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Complete your upgrade — Peakcut</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
+    --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.6; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 40px 0 20px; }
+  .brand { font-size: 1rem; font-weight: 800; margin-bottom: 4px; }
+  h1 { font-size: 1.6rem; margin: 8px 0; }
+  header p { color: var(--muted); margin: 0; }
+
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .section h2 { margin-top: 0; font-size: 1.05rem; }
+
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: var(--muted); font-size: 0.9rem; }
+  .row .value { font-weight: 700; font-family: Monaco, "Courier New", monospace; text-align: right; word-break: break-all; }
+
+  .reference { background: #f3f0ff; border: 2px dashed var(--accent); border-radius: 10px; padding: 16px; text-align: center; margin: 16px 0; }
+  .reference .label { color: var(--muted); font-size: 0.85rem; margin-bottom: 4px; }
+  .reference .value { font-size: 1.4rem; font-weight: 800; font-family: Monaco, "Courier New", monospace; letter-spacing: 2px; color: var(--accent-dark); }
+
+  .warning { background: #fff8e1; border: 1px solid #f0d878; border-radius: 10px; padding: 14px 16px; font-size: 0.9rem; color: #6b5a1a; }
+
+  a.button { display: inline-block; text-align: center; width: 100%; padding: 12px 24px; border-radius: 8px; background: var(--accent); color: white; text-decoration: none; font-weight: 600; margin-top: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 30px 0 50px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">🎬 Peakcut</div>
+      <h1>Complete your __TIER_LABEL__ upgrade</h1>
+      <p>Send a bank transfer with the reference code below, then it'll be activated by hand once it shows up.</p>
+    </header>
+
+    <div class="section">
+      <h2>Transfer details</h2>
+      <div class="row"><span class="label">Amount</span><span class="value">__PRICE__ / month</span></div>
+      <div class="row"><span class="label">Bank</span><span class="value">__BANK_NAME__</span></div>
+      <div class="row"><span class="label">Account name</span><span class="value">__ACCOUNT_NAME__</span></div>
+      <div class="row"><span class="label">Account number</span><span class="value">__ACCOUNT_NUMBER__</span></div>
+      <div class="row"><span class="label">Routing number</span><span class="value">__ROUTING_NUMBER__</span></div>
+
+      <div class="reference">
+        <div class="label">Include this exact reference in your transfer memo</div>
+        <div class="value">__REFERENCE__</div>
+      </div>
+
+      <div class="warning">This links the payment to your account (__EMAIL__). A transfer without it can't be matched automatically and may take longer to activate — please double check it's included.</div>
+    </div>
+
+    <div class="section">
+      <h2>What happens next</h2>
+      <p style="margin:0">Once the transfer is confirmed, __TIER_LABEL__ is activated on your account manually — usually within a day. Subscriptions renew the same way each month; you'll want to set up a recurring transfer on your end if you want it to continue automatically.</p>
+    </div>
+
+    <a class="button" href="__SITE_URL__/">Back to Peakcut</a>
+  </div>
+
+  <footer>
+    Questions? <a href="mailto:__CONTACT_EMAIL__">__CONTACT_EMAIL__</a>
+  </footer>
+</body>
+</html>

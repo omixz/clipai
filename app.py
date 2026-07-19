@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import itertools
 import json
 import logging
@@ -10,6 +12,7 @@ import threading
 import time
 import uuid
 import zipfile
+from html import escape
 from io import BytesIO
 from pathlib import Path
 
@@ -45,6 +48,16 @@ API_KEYS_FILE = JOBS_DIR / "api_keys.json"
 # same "never trust local storage for Pro status" principle the Stripe
 # integration this replaced was built around.
 PAYPAL_SUBS_FILE = JOBS_DIR / "paypal_subscriptions.json"
+# email -> tier ("pro" | "pro_plus"), set manually by an admin (see the
+# /admin/billing routes below) after a direct bank transfer payment shows
+# up -- there's no processor API to check status against for this path, so
+# unlike every other tier source in this file, this one genuinely IS the
+# trusted source of truth rather than a link to something checked live.
+# Keyed by email (not `identity`) since that's what an admin actually has
+# on hand when a payment arrives, and only ever consulted for a *signed-in*
+# account (see get_account_tier), so it can't be spoofed by an anonymous
+# cookie claiming someone else's email.
+MANUAL_GRANTS_FILE = JOBS_DIR / "manual_grants.json"
 
 
 def _atomic_write_text(path: Path, text: str):
@@ -70,8 +83,11 @@ if not API_KEYS_FILE.exists():
     _atomic_write_text(API_KEYS_FILE, "{}")
 if not PAYPAL_SUBS_FILE.exists():
     _atomic_write_text(PAYPAL_SUBS_FILE, "{}")
+if not MANUAL_GRANTS_FILE.exists():
+    _atomic_write_text(MANUAL_GRANTS_FILE, "{}")
 
 _paypal_subs_lock = threading.Lock()
+_manual_grants_lock = threading.Lock()
 
 
 def load_paypal_subs() -> dict:
@@ -84,6 +100,32 @@ def link_paypal_subscription(identity: str, subscription_id: str):
         data = json.loads(PAYPAL_SUBS_FILE.read_text())
         data[identity] = subscription_id
         _atomic_write_text(PAYPAL_SUBS_FILE, json.dumps(data, indent=2))
+
+
+def load_manual_grants() -> dict:
+    with _manual_grants_lock:
+        return json.loads(MANUAL_GRANTS_FILE.read_text())
+
+
+def set_manual_grant(email: str, tier: str):
+    with _manual_grants_lock:
+        data = json.loads(MANUAL_GRANTS_FILE.read_text())
+        data[email.lower()] = tier
+        _atomic_write_text(MANUAL_GRANTS_FILE, json.dumps(data, indent=2))
+
+
+def remove_manual_grant(email: str):
+    with _manual_grants_lock:
+        data = json.loads(MANUAL_GRANTS_FILE.read_text())
+        data.pop(email.lower(), None)
+        _atomic_write_text(MANUAL_GRANTS_FILE, json.dumps(data, indent=2))
+
+
+def is_admin(request: Request) -> bool:
+    if not config.ADMIN_EMAILS:
+        return False
+    account = get_account(request)
+    return bool(account and account.get("email", "").lower() in config.ADMIN_EMAILS)
 
 
 app = FastAPI()
@@ -226,19 +268,29 @@ TIER_LIMITS = {"free": config.FREE_LIMIT, "pro": config.PRO_LIMIT, "pro_plus": c
 
 
 def get_account_tier(request: Request) -> str:
-    """'free' | 'pro' | 'pro_plus' — checked live against PayPal, never
-    trusted from local storage alone. Billing is keyed off `identity` (the
-    same key usage.json tracks, and the same one that's the signed-in
-    Google account once configured — see get_identity) rather than a
-    separate signed cookie: PAYPAL_SUBS_FILE only maps identity ->
-    subscription id, and this always makes a live
-    billing_lib.get_subscription() call to check its *current* status/plan,
-    so a cancelled subscription stops granting Pro without depending on any
-    webhook actually arriving."""
+    """'free' | 'pro' | 'pro_plus'. Three sources, checked in order:
+    1. Admin allowlist (config.ADMIN_EMAILS) -- always Pro Plus.
+    2. Manual grants (MANUAL_GRANTS_FILE) -- the active path while billing
+       is direct bank transfer with no processor API to check against; an
+       admin sets this by hand after seeing a payment land (see
+       /admin/billing). This is the one tier source in this file that's
+       genuinely trusted from local storage rather than checked live,
+       because there's nothing live to check it against.
+    3. PayPal (PAYPAL_SUBS_FILE) -- keyed off `identity` rather than a
+       separate signed cookie, and always double-checked live against
+       billing_lib.get_subscription() so a cancelled subscription stops
+       granting Pro without depending on any webhook actually arriving."""
     if config.ADMIN_EMAILS:
         account = get_account(request)
         if account and account.get("email", "").lower() in config.ADMIN_EMAILS:
             return "pro_plus"
+
+    account = get_account(request)
+    if account:
+        granted = load_manual_grants().get(account.get("email", "").lower())
+        if granted in ("pro", "pro_plus"):
+            return granted
+
     identity = get_identity(request)
     subscription_id = load_paypal_subs().get(identity)
     if not subscription_id:
@@ -953,7 +1005,39 @@ def logout():
     return resp
 
 
-# ── PayPal billing ───────────────────────────────────────────────────────────
+# ── Direct bank transfer billing ────────────────────────────────────────────
+# No processor in the loop -- see config.BANK_PAYMENT_CONFIGURED's comment.
+# Takes priority over PayPal in checkout/tier-check when configured.
+
+_TIER_LABELS = {"pro": "Pro", "pro_plus": "Pro Plus"}
+_TIER_PRICES = {"pro": "$15", "pro_plus": "$29"}
+
+
+def _bank_transfer_reference(email: str, tier: str) -> str:
+    """Deterministic per-(email, tier) code so the same customer always sees
+    the same reference on repeat visits, but it's HMAC'd with
+    SESSION_SECRET_KEY so an outsider can't compute or guess another
+    customer's reference from their email alone."""
+    digest = hmac.new(config.SESSION_SECRET_KEY.encode(), f"{email.lower()}:{tier}".encode(), hashlib.sha256).hexdigest()
+    return digest[:8].upper()
+
+
+def _render_bank_transfer_page(email: str, tier: str) -> str:
+    html = (BASE_DIR / "bank_transfer.html").read_text()
+    return (
+        html
+        .replace("__SITE_URL__", config.SITE_URL)
+        .replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+        .replace("__TIER_LABEL__", _TIER_LABELS[tier])
+        .replace("__PRICE__", _TIER_PRICES[tier])
+        .replace("__BANK_NAME__", config.BANK_NAME)
+        .replace("__ACCOUNT_NAME__", config.BANK_ACCOUNT_NAME)
+        .replace("__ACCOUNT_NUMBER__", config.BANK_ACCOUNT_NUMBER)
+        .replace("__ROUTING_NUMBER__", config.BANK_ROUTING_NUMBER)
+        .replace("__REFERENCE__", _bank_transfer_reference(email, tier))
+        .replace("__EMAIL__", email)
+    )
+
 
 def _start_paypal_checkout(request: Request, plan_id: str):
     identity = get_identity(request)
@@ -976,19 +1060,30 @@ def _start_paypal_checkout(request: Request, plan_id: str):
     return resp
 
 
-@app.get("/create-checkout-session")
-def create_checkout_session(request: Request):
+def _checkout(request: Request, tier: str, plan_id: str):
+    if config.BANK_PAYMENT_CONFIGURED:
+        # The reference code is keyed by email, so an account is required
+        # for this path regardless of GOOGLE_SIGNIN_CONFIGURED's normal
+        # soft-requirement (there's no anonymous equivalent that a human
+        # can manually match a bank deposit against).
+        account = get_account(request)
+        if not account:
+            return RedirectResponse("/auth/google/login", status_code=303)
+        return HTMLResponse(_render_bank_transfer_page(account["email"], tier))
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         return RedirectResponse("/auth/google/login", status_code=303)
-    return _start_paypal_checkout(request, config.PAYPAL_PLAN_ID_PRO)
+    return _start_paypal_checkout(request, plan_id)
+
+
+@app.get("/create-checkout-session")
+def create_checkout_session(request: Request):
+    return _checkout(request, "pro", config.PAYPAL_PLAN_ID_PRO)
 
 
 @app.get("/create-checkout-session-plus")
 def create_checkout_session_plus(request: Request):
     """Checkout for Pro Plus tier."""
-    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
-        return RedirectResponse("/auth/google/login", status_code=303)
-    return _start_paypal_checkout(request, config.PAYPAL_PLAN_ID_PLUS)
+    return _checkout(request, "pro_plus", config.PAYPAL_PLAN_ID_PLUS)
 
 
 @app.get("/billing-portal")
@@ -1038,6 +1133,53 @@ async def paypal_webhook(request: Request):
         log.info("paypal %s: %s", event_type, event.get("resource", {}).get("id"))
 
     return {"received": True}
+
+
+# ── Admin: manual billing grants (direct bank transfer path) ────────────────
+
+def _render_admin_billing_page() -> str:
+    grants = load_manual_grants()
+    if grants:
+        rows = "".join(
+            f'<tr><td>{escape(email)}</td><td class="tier-{escape(tier)}">{escape(_TIER_LABELS.get(tier, tier))}</td>'
+            f'<td><form class="inline" method="post" action="/admin/billing/revoke">'
+            f'<input type="hidden" name="email" value="{escape(email)}">'
+            f'<button class="revoke" type="submit">Revoke</button></form></td></tr>'
+            for email, tier in sorted(grants.items())
+        )
+        table = f"<table><tr><th>Email</th><th>Tier</th><th></th></tr>{rows}</table>"
+    else:
+        table = '<p class="empty">No manual grants yet.</p>'
+    return (BASE_DIR / "admin_billing.html").read_text().replace("__GRANTS_TABLE__", table)
+
+
+@app.get("/admin/billing", response_class=HTMLResponse)
+def admin_billing(request: Request):
+    if not is_admin(request):
+        raise HTTPException(status_code=404)
+    return _render_admin_billing_page()
+
+
+@app.post("/admin/billing/grant")
+def admin_billing_grant(request: Request, email: str = Form(...), tier: str = Form(...)):
+    if not is_admin(request):
+        raise HTTPException(status_code=404)
+    if tier not in ("pro", "pro_plus"):
+        raise HTTPException(status_code=400, detail="Invalid tier.")
+    if not EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Invalid email.")
+    set_manual_grant(email, tier)
+    log.info("admin granted %s to %s", tier, email)
+    return RedirectResponse("/admin/billing", status_code=303)
+
+
+@app.post("/admin/billing/revoke")
+def admin_billing_revoke(request: Request, email: str = Form(...)):
+    if not is_admin(request):
+        raise HTTPException(status_code=404)
+    remove_manual_grant(email)
+    log.info("admin revoked manual grant for %s", email)
+    return RedirectResponse("/admin/billing", status_code=303)
 
 
 # ── API Endpoints ───────────────────────────────────────────────────────────
