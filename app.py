@@ -14,7 +14,9 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 import stripe
 from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse,
+)
 
 import auth
 import config
@@ -26,8 +28,12 @@ log = logging.getLogger("clipai")
 
 BASE_DIR = Path(__file__).parent
 JOBS_DIR = BASE_DIR / "jobs"
-USAGE_FILE = BASE_DIR / "usage.json"
-API_KEYS_FILE = BASE_DIR / "api_keys.json"
+# Both files live inside JOBS_DIR so they ride the same persistent volume
+# (docker-compose.yml mounts only /app/jobs) — otherwise a redeploy on the
+# Oracle VM would silently wipe every free-tier counter and API key, unlike
+# on Render where the whole disk is ephemeral anyway.
+USAGE_FILE = JOBS_DIR / "usage.json"
+API_KEYS_FILE = JOBS_DIR / "api_keys.json"
 
 JOBS_DIR.mkdir(exist_ok=True)
 if not USAGE_FILE.exists():
@@ -256,7 +262,7 @@ def _worker():
             # actual reason rather than the generic message below.
             log.info("job %s rejected: %s", job_id, e)
             shutil.rmtree(job_dir, ignore_errors=True)
-            if not job["is_pro"]:
+            if not job.get("is_pro", True) and job.get("identity"):
                 refund_free_use(job["identity"])
             _set_job(job_id, status="failed", error=str(e), finished_at=time.time())
             if job.get("notify_email"):
@@ -264,7 +270,7 @@ def _worker():
         except Exception as e:
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
-            if not job["is_pro"]:
+            if not job.get("is_pro", True) and job.get("identity"):
                 refund_free_use(job["identity"])
             error_str = str(e).lower()
             if "no speech" in error_str or "no usable" in error_str:
@@ -543,7 +549,7 @@ def download_all_clips(job_id: str):
             zf.write(manifest_path, arcname="manifest.json")
 
     zip_buffer.seek(0)
-    return FileResponse(
+    return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=peakcut_{job_id[:8]}.zip"}
@@ -767,23 +773,47 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
     if clip_format not in ("vertical", "square", "horizontal"):
         raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
 
-    if file.size and file.size > config.MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"Video too large (max {config.MAX_UPLOAD_MB}MB).")
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in config.ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'. Use MP4, MOV, M4V, WEBM, or MKV.")
+
+    if _job_queue.full():
+        raise HTTPException(status_code=503, detail="Server queue full, please try again shortly.")
 
     job_id = str(uuid.uuid4())[:8]
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    # Name from our own extension, never the client-supplied filename directly
+    # (a raw filename like "../../etc/passwd" would write outside job_dir).
+    video_path = job_dir / f"input{ext}"
 
-    video_path = job_dir / file.filename
-    with open(video_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    max_bytes = config.MAX_UPLOAD_MB * 1024 * 1024
+    size = 0
+    try:
+        with open(video_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > max_bytes:
+                    raise HTTPException(status_code=413, detail=f"Video too large (max {config.MAX_UPLOAD_MB}MB).")
+                f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+    except Exception:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        log.exception("API upload failed")
+        raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
-    _set_job(job_id, status="queued", api_key=True, clip_format=clip_format)
+    is_pro = key_info.get("tier", "free") in ("pro", "pro_plus")
+    _set_job(job_id, status="queued", api_key=True, identity=f"apikey:{api_key}", is_pro=is_pro,
+              input_path=str(video_path), created_at=time.time(), dub_lang=None,
+              notify_email=None, clip_format=clip_format, caption_style="bold")
     try:
         _job_queue.put_nowait(job_id)
     except queue.Full:
-        _set_job(job_id, status="error", error="Server queue full, please try again shortly.")
+        shutil.rmtree(job_dir, ignore_errors=True)
+        with _jobs_lock:
+            _jobs.pop(job_id, None)
         raise HTTPException(status_code=503, detail="Server queue full, please try again shortly.")
 
     return {"job_id": job_id, "status": "queued"}
@@ -808,7 +838,7 @@ def api_get_clips(job_id: str, request: Request):
 
     if job["status"] == "processing":
         return {"status": "processing", "progress": job.get("progress", 0)}
-    elif job["status"] == "error":
+    elif job["status"] == "failed":
         return {"status": "error", "error": job.get("error", "Unknown error")}
     elif job["status"] == "done":
         manifest_path = JOBS_DIR / job_id / "manifest.json"

@@ -1,5 +1,6 @@
 jobs/
 usage.json
+api_keys.json
 __pycache__/
 *.pyc
 .env
