@@ -1024,6 +1024,10 @@ def _bank_transfer_reference(email: str, tier: str) -> str:
 
 def _render_bank_transfer_page(email: str, tier: str) -> str:
     html = (BASE_DIR / "bank_transfer.html").read_text()
+    payid_row = (
+        f'<div class="row"><span class="label">PayID</span><span class="value">{config.BANK_PAYID}</span></div>'
+        if config.BANK_PAYID else ""
+    )
     return (
         html
         .replace("__SITE_URL__", config.SITE_URL)
@@ -1033,7 +1037,8 @@ def _render_bank_transfer_page(email: str, tier: str) -> str:
         .replace("__BANK_NAME__", config.BANK_NAME)
         .replace("__ACCOUNT_NAME__", config.BANK_ACCOUNT_NAME)
         .replace("__ACCOUNT_NUMBER__", config.BANK_ACCOUNT_NUMBER)
-        .replace("__ROUTING_NUMBER__", config.BANK_ROUTING_NUMBER)
+        .replace("__BSB__", config.BANK_BSB)
+        .replace("__PAYID_ROW__", payid_row)
         .replace("__REFERENCE__", _bank_transfer_reference(email, tier))
         .replace("__EMAIL__", email)
     )
