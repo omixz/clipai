@@ -15,7 +15,6 @@ from pathlib import Path
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-import stripe
 from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
 from fastapi.responses import (
     FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse,
@@ -23,6 +22,7 @@ from fastapi.responses import (
 
 import auth
 import backgrounds
+import billing_lib
 import config
 import email_lib
 import pipeline_lib
@@ -38,6 +38,13 @@ JOBS_DIR = BASE_DIR / "jobs"
 # on Render where the whole disk is ephemeral anyway.
 USAGE_FILE = JOBS_DIR / "usage.json"
 API_KEYS_FILE = JOBS_DIR / "api_keys.json"
+# identity -> PayPal subscription id, linked the moment checkout is created
+# (see billing_lib.create_subscription for why that's safe pre-approval).
+# Tier is never trusted from this file alone -- get_account_tier always
+# makes a live billing_lib.get_subscription() call with the id found here,
+# same "never trust local storage for Pro status" principle the Stripe
+# integration this replaced was built around.
+PAYPAL_SUBS_FILE = JOBS_DIR / "paypal_subscriptions.json"
 
 
 def _atomic_write_text(path: Path, text: str):
@@ -61,8 +68,23 @@ if not USAGE_FILE.exists():
     _atomic_write_text(USAGE_FILE, "{}")
 if not API_KEYS_FILE.exists():
     _atomic_write_text(API_KEYS_FILE, "{}")
+if not PAYPAL_SUBS_FILE.exists():
+    _atomic_write_text(PAYPAL_SUBS_FILE, "{}")
 
-stripe.api_key = config.STRIPE_SECRET_KEY
+_paypal_subs_lock = threading.Lock()
+
+
+def load_paypal_subs() -> dict:
+    with _paypal_subs_lock:
+        return json.loads(PAYPAL_SUBS_FILE.read_text())
+
+
+def link_paypal_subscription(identity: str, subscription_id: str):
+    with _paypal_subs_lock:
+        data = json.loads(PAYPAL_SUBS_FILE.read_text())
+        data[identity] = subscription_id
+        _atomic_write_text(PAYPAL_SUBS_FILE, json.dumps(data, indent=2))
+
 
 app = FastAPI()
 
@@ -204,28 +226,27 @@ TIER_LIMITS = {"free": config.FREE_LIMIT, "pro": config.PRO_LIMIT, "pro_plus": c
 
 
 def get_account_tier(request: Request) -> str:
-    """'free' | 'pro' | 'pro_plus' — checked live against Stripe via a
-    customer ID cookie set after checkout, never from local storage, which is
-    wiped on every restart on disk-less hosts (Render free tier included).
-    Distinguishes the two paid tiers by the subscribed price ID so each gets
-    its own monthly cap instead of both being treated as the same "Pro".
-    The cookie is signed (see auth.read_customer_cookie) so a client can't
-    just set clipai_customer=<any Stripe customer id it finds> and claim
-    that customer's paid tier — Stripe customer ids are not secrets."""
-    customer_id = auth.read_customer_cookie(request.cookies.get("clipai_customer"))
-    if not customer_id:
-        return "free"
-    try:
-        subs = stripe.Subscription.list(customer=customer_id, status="active", limit=1)
-        if not subs.data:
-            return "free"
-        price_id = subs.data[0]["items"]["data"][0]["price"]["id"]
-        if price_id == config.STRIPE_PRICE_ID_PLUS:
+    """'free' | 'pro' | 'pro_plus' — checked live against PayPal, never
+    trusted from local storage alone. Billing is keyed off `identity` (the
+    same key usage.json tracks, and the same one that's the signed-in
+    Google account once configured — see get_identity) rather than a
+    separate signed cookie: PAYPAL_SUBS_FILE only maps identity ->
+    subscription id, and this always makes a live
+    billing_lib.get_subscription() call to check its *current* status/plan,
+    so a cancelled subscription stops granting Pro without depending on any
+    webhook actually arriving."""
+    if config.ADMIN_EMAILS:
+        account = get_account(request)
+        if account and account.get("email", "").lower() in config.ADMIN_EMAILS:
             return "pro_plus"
-        return "pro"
-    except Exception:
-        log.exception("Stripe subscription lookup failed")
+    identity = get_identity(request)
+    subscription_id = load_paypal_subs().get(identity)
+    if not subscription_id:
         return "free"
+    sub = billing_lib.get_subscription(subscription_id)
+    if not sub or sub["status"] not in billing_lib.PAID_STATUSES:
+        return "free"
+    return billing_lib.tier_for_plan(sub["plan_id"])
 
 
 def check_pro_status(request: Request) -> bool:
@@ -932,29 +953,34 @@ def logout():
     return resp
 
 
-# ── Stripe billing ──────────────────────────────────────────────────────────
+# ── PayPal billing ───────────────────────────────────────────────────────────
+
+def _start_paypal_checkout(request: Request, plan_id: str):
+    identity = get_identity(request)
+    try:
+        subscription_id, approve_url = billing_lib.create_subscription(
+            plan_id, identity,
+            return_url=f"{config.SITE_URL}/confirm-checkout",
+            cancel_url=f"{config.SITE_URL}/",
+        )
+        # Safe to link immediately -- see create_subscription's docstring.
+        # An abandoned/never-approved checkout just leaves a subscription id
+        # that permanently reads as non-paid on every live status check.
+        link_paypal_subscription(identity, subscription_id)
+    except Exception:
+        log.exception("paypal subscription creation failed")
+        raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
+
+    resp = RedirectResponse(approve_url, status_code=303)
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
+    return resp
+
 
 @app.get("/create-checkout-session")
 def create_checkout_session(request: Request):
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         return RedirectResponse("/auth/google/login", status_code=303)
-
-    identity = get_identity(request)
-    try:
-        session = stripe.checkout.Session.create(
-            mode="subscription",
-            line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
-            success_url=f"{config.SITE_URL}/confirm-checkout?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{config.SITE_URL}/",
-            client_reference_id=identity,
-        )
-    except Exception:
-        log.exception("stripe checkout session creation failed")
-        raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
-
-    resp = RedirectResponse(session.url, status_code=303)
-    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
-    return resp
+    return _start_paypal_checkout(request, config.PAYPAL_PLAN_ID_PRO)
 
 
 @app.get("/create-checkout-session-plus")
@@ -962,78 +988,54 @@ def create_checkout_session_plus(request: Request):
     """Checkout for Pro Plus tier."""
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         return RedirectResponse("/auth/google/login", status_code=303)
-
-    identity = get_identity(request)
-    try:
-        session = stripe.checkout.Session.create(
-            mode="subscription",
-            line_items=[{"price": config.STRIPE_PRICE_ID_PLUS, "quantity": 1}],
-            success_url=f"{config.SITE_URL}/confirm-checkout?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{config.SITE_URL}/pricing",
-            client_reference_id=identity,
-        )
-    except Exception:
-        log.exception("stripe checkout session creation failed for Pro Plus")
-        raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
-
-    resp = RedirectResponse(session.url, status_code=303)
-    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
-    return resp
+    return _start_paypal_checkout(request, config.PAYPAL_PLAN_ID_PLUS)
 
 
 @app.get("/billing-portal")
 def billing_portal(request: Request):
-    """Lets a Pro subscriber manage or cancel their own subscription without
-    emailing support — Stripe hosts the actual portal page. The cookie is
-    signature-verified (see get_account_tier) since an unverified customer id
-    here wouldn't just grant a free upgrade, it would open a stranger's real
-    Stripe billing portal — their payment methods, invoices, and ability to
-    cancel their subscription."""
-    customer_id = auth.read_customer_cookie(request.cookies.get("clipai_customer"))
-    if not customer_id:
+    """PayPal has no per-subscription self-serve portal link the way Stripe
+    / Lemon Squeezy did (no API returns one) — the closest equivalent is
+    PayPal's own automatic-payments management page under the subscriber's
+    own PayPal account, which they'd already be logged into to have
+    subscribed in the first place."""
+    identity = get_identity(request)
+    if not load_paypal_subs().get(identity):
         return RedirectResponse(f"{config.SITE_URL}/", status_code=303)
-    try:
-        session = stripe.billing_portal.Session.create(
-            customer=customer_id, return_url=f"{config.SITE_URL}/"
-        )
-    except Exception:
-        log.exception("stripe billing portal session creation failed")
-        raise HTTPException(status_code=500, detail="Couldn't open billing portal — try again shortly.")
-    return RedirectResponse(session.url, status_code=303)
+    return RedirectResponse("https://www.paypal.com/myaccount/autopay/", status_code=303)
 
 
 @app.get("/confirm-checkout")
-def confirm_checkout(session_id: str):
-    """Stripe redirects here after checkout. The session is looked up
-    server-to-server (can't be spoofed by editing the URL); on success the
-    Stripe customer ID goes in a signed cookie (see auth.sign_customer_cookie
-    for why it can't just be a raw id) and Pro is checked live from then on —
-    see check_pro_status for why nothing is persisted locally."""
-    try:
-        session = stripe.checkout.Session.retrieve(session_id)
-    except Exception:
-        log.exception("failed to retrieve checkout session")
-        return RedirectResponse(f"{config.SITE_URL}/?upgrade_error=1", status_code=303)
+def confirm_checkout(request: Request):
+    """PayPal redirects here right after the buyer approves the
+    subscription. The subscription id was already linked to `identity` at
+    creation time (see _start_paypal_checkout), but approval itself can lag
+    a moment behind the redirect, so this polls PayPal's live status
+    briefly rather than trusting anything in the redirect URL itself."""
+    identity = get_identity(request)
+    subscription_id = load_paypal_subs().get(identity)
+    if subscription_id:
+        for _ in range(5):
+            sub = billing_lib.get_subscription(subscription_id)
+            if sub and sub["status"] in billing_lib.PAID_STATUSES:
+                return RedirectResponse(f"{config.SITE_URL}/?upgraded=1", status_code=303)
+            time.sleep(1)
+    return RedirectResponse(f"{config.SITE_URL}/?upgrade_pending=1", status_code=303)
 
-    resp = RedirectResponse(f"{config.SITE_URL}/?upgraded=1", status_code=303)
-    if session.payment_status in ("paid", "no_payment_required") and session.customer:
-        set_session_cookie(resp, "clipai_customer", auth.sign_customer_cookie(session.customer), max_age=60 * 60 * 24 * 365)
-    return resp
 
-
-@app.post("/stripe/webhook")
-async def stripe_webhook(request: Request):
+@app.post("/paypal/webhook")
+async def paypal_webhook(request: Request):
     payload = await request.body()
-    sig_header = request.headers.get("stripe-signature", "")
-    try:
-        event = stripe.Webhook.construct_event(payload, sig_header, config.STRIPE_WEBHOOK_SECRET)
-    except Exception:
+    if not billing_lib.verify_webhook_signature(dict(request.headers), payload):
         raise HTTPException(status_code=400, detail="Invalid webhook signature.")
 
-    if event["type"] == "checkout.session.completed":
-        log.info("checkout completed for customer %s", event["data"]["object"].get("customer"))
-    elif event["type"] in ("customer.subscription.deleted", "customer.subscription.paused"):
-        log.info("subscription ended for customer %s", event["data"]["object"].get("customer"))
+    event = json.loads(payload)
+    event_type = event.get("event_type", "")
+
+    # No local state to update on either event -- get_account_tier always
+    # checks PayPal live, and the subscription id was already linked at
+    # checkout creation, so this is purely for visibility/logging.
+    if event_type in ("BILLING.SUBSCRIPTION.ACTIVATED", "BILLING.SUBSCRIPTION.CANCELLED"):
+        log.info("paypal %s: %s", event_type, event.get("resource", {}).get("id"))
 
     return {"received": True}
 

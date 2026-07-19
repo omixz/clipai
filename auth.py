@@ -1,7 +1,8 @@
 """Sign in with Google. Kept deliberately dependency-light: httpx (already a
-transitive dep via stripe/huggingface_hub) for the OAuth HTTP calls, PyJWT for
-verifying Google's signed ID token, itsdangerous for signing our own account
-cookie so it can't be forged client-side."""
+transitive dep via huggingface_hub, and also used directly for PayPal API
+calls) for the OAuth HTTP calls, PyJWT for verifying Google's signed ID
+token, itsdangerous for signing our own account cookie so it can't be
+forged client-side."""
 import logging
 import secrets
 import time
@@ -24,24 +25,26 @@ _discovery_cache = {"data": None, "at": 0.0}
 _jwks_client = None
 _serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-account-v1")
 
-# SESSION_SECRET_KEY signs both this cookie and the Stripe customer cookie
-# below -- if a deployer sets up Google Sign-In or Stripe but forgets to also
-# set this one (plausible: it's not required for the OAuth handshake to look
-# like it works end-to-end), it silently stays at this hardcoded default,
-# which is visible in this public repo. Anyone who's read the source could
-# then forge a validly-"signed" cookie claiming to be any user or any Stripe
-# customer -- full account takeover / free Pro access for the taking, and
-# nothing about a working-looking sign-in flow would reveal it. Rather than
-# just warn and hope someone reads the logs, read_account_cookie and
-# read_customer_cookie both refuse to trust ANY cookie while this is true --
-# sign-in and billing degrade to "doesn't work" instead of "is forgeable",
-# which is a failure a deployer will actually notice while testing.
+# SESSION_SECRET_KEY signs this account cookie, which Pro-tier lookups now
+# key off of too (see get_identity/get_account_tier in app.py) -- if a
+# deployer sets up Google Sign-In but forgets to also set this one
+# (plausible: it's not required for the OAuth handshake to look like it
+# works end-to-end), it silently stays at this hardcoded default, which is
+# visible in this public repo. Anyone who's read the source could then forge
+# a validly-"signed" cookie claiming to be any user -- full account takeover
+# / free Pro access for the taking, and nothing about a working-looking
+# sign-in flow would reveal it. Rather than just warn and hope someone reads
+# the logs, read_account_cookie refuses to trust ANY cookie while this is
+# true -- sign-in and billing degrade to "doesn't work" instead of "is
+# forgeable", which is a failure a deployer will actually notice while
+# testing.
 SESSION_SECRET_IS_DEFAULT = config.SESSION_SECRET_KEY == "dev-only-insecure-secret-REPLACE_ME"
 if SESSION_SECRET_IS_DEFAULT:
     log.warning(
         "SESSION_SECRET_KEY is still the default placeholder -- signed cookies "
-        "(Google sign-in, Stripe customer/Pro status) will be refused entirely "
-        "until a real secret is set. Set SESSION_SECRET_KEY (openssl rand -hex 32)."
+        "(Google sign-in, and Pro status since it's keyed off the signed-in "
+        "account) will be refused entirely until a real secret is set. Set "
+        "SESSION_SECRET_KEY (openssl rand -hex 32)."
     )
 
 
@@ -116,35 +119,4 @@ def read_account_cookie(token: str) -> dict | None:
         return None
     except Exception:
         log.exception("failed to parse account cookie")
-        return None
-
-
-# clipai_customer holds a Stripe customer id and is trusted at face value
-# (get_account_tier/billing_portal query Stripe directly with whatever value
-# is in it, with zero further verification) -- but Stripe customer ids are
-# NOT secrets by Stripe's own design (they show up in dashboard URLs,
-# receipts, webhook payloads, support tickets...), so an unsigned cookie lets
-# anyone who learns/guesses another customer's id set it as their own cookie
-# and get that customer's Pro/Pro Plus tier for free -- or worse, open that
-# customer's actual Stripe billing portal (their payment methods, invoices,
-# ability to cancel their subscription) via billing_portal. Signed with a
-# distinct salt from the account cookie so the two can't be swapped for
-# each other even though both use the same underlying secret key.
-_customer_serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-customer-v1")
-CUSTOMER_MAX_AGE = 60 * 60 * 24 * 365
-
-
-def sign_customer_cookie(customer_id: str) -> str:
-    return _customer_serializer.dumps({"customer_id": customer_id})
-
-
-def read_customer_cookie(token: str) -> str | None:
-    if not token or SESSION_SECRET_IS_DEFAULT:
-        return None
-    try:
-        return _customer_serializer.loads(token, max_age=CUSTOMER_MAX_AGE)["customer_id"]
-    except BadSignature:
-        return None
-    except Exception:
-        log.exception("failed to parse customer cookie")
         return None

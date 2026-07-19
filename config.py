@@ -1,9 +1,19 @@
 # ── ONE-TIME SETUP ──────────────────────────────────────────────────────────
-# 1. Stripe: create a product + recurring price ($10-20/mo) in your Stripe
-#    Dashboard, then fill in the three values below from Developers > API keys
-#    and Developers > Webhooks (after pointing a webhook at /stripe/webhook
-#    for the checkout.session.completed and customer.subscription.deleted
-#    events).
+# 1. PayPal (billing -- swapped in for Lemon Squeezy, which (like Stripe
+#    before it) needed identity/tax verification that wasn't available;
+#    PayPal has a lighter bar to start, though it will still ask for tax
+#    info once volume grows -- deferred, not solved, by this swap):
+#    - PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET: developer.paypal.com > Apps &
+#      Credentials > create a REST API app. Use the Sandbox app's credentials
+#      first (PAYPAL_MODE=sandbox) to test end-to-end before going live.
+#    - Create a Pro and a Pro Plus subscription Product + Plan (Billing >
+#      Plans in the dashboard, or the /v1/billing/plans API) and paste each
+#      Plan's id below.
+#    - PAYPAL_WEBHOOK_ID: Apps & Credentials > your app > Webhooks > add an
+#      endpoint at {SITE_URL}/paypal/webhook subscribed to at least
+#      BILLING.SUBSCRIPTION.ACTIVATED and BILLING.SUBSCRIPTION.CANCELLED
+#      (tier checks are always live against PayPal directly, so this is for
+#      logging/visibility, not something Pro status depends on arriving).
 # 2. AdSense: sign up at https://adsense.google.com with this site's live URL.
 #    Once approved, paste your publisher ID below and uncomment the script
 #    tag in index.html's <head>.
@@ -12,10 +22,11 @@
 #    Web application). Add {SITE_URL}/auth/google/callback as an authorized
 #    redirect URI. Paste the client ID + secret below. Also set
 #    SESSION_SECRET_KEY to a long random string (e.g. `openssl rand -hex 32`)
-#    — it signs both the account cookie AND the Stripe customer cookie, so
-#    losing it invalidates every signed-in session and every logged-in Pro
-#    subscriber's access. This one is NOT optional the moment either Google
-#    Sign-In or Stripe is configured: leaving it at the placeholder default
+#    — it signs the account cookie that both sign-in AND Pro-tier lookups key
+#    off of (see get_identity/get_account_tier in app.py), so losing it
+#    invalidates every signed-in session and every logged-in Pro subscriber's
+#    access. This one is NOT optional the moment either Google Sign-In or
+#    PayPal is configured: leaving it at the placeholder default
 #    doesn't fail open, but auth.py deliberately refuses to trust ANY signed
 #    cookie while it's unset, so sign-in and Pro status will look completely
 #    broken (never signed in, never Pro) until you set a real value.
@@ -32,10 +43,13 @@
 # ─────────────────────────────────────────────────────────────────────────
 import os
 
-STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_REPLACE_ME")
-STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "price_REPLACE_ME")
-STRIPE_PRICE_ID_PLUS = os.environ.get("STRIPE_PRICE_ID_PLUS", "price_REPLACE_ME_PLUS")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_REPLACE_ME")
+PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID", "")
+PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET", "")
+PAYPAL_MODE = os.environ.get("PAYPAL_MODE", "sandbox")  # "sandbox" or "live"
+PAYPAL_PLAN_ID_PRO = os.environ.get("PAYPAL_PLAN_ID_PRO", "")
+PAYPAL_PLAN_ID_PLUS = os.environ.get("PAYPAL_PLAN_ID_PLUS", "")
+PAYPAL_WEBHOOK_ID = os.environ.get("PAYPAL_WEBHOOK_ID", "")
+PAYPAL_CONFIGURED = bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)
 ADSENSE_PUBLISHER_ID = os.environ.get("ADSENSE_PUBLISHER_ID", "ca-pub-5158161193547085")
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "REPLACE_ME.apps.googleusercontent.com")
@@ -87,10 +101,18 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
 BACKGROUND_UPLOAD_MB = int(os.environ.get("BACKGROUND_UPLOAD_MB", "50"))
 MAX_BACKGROUND_DURATION_SEC = int(os.environ.get("MAX_BACKGROUND_DURATION_SEC", "60"))
 
-# How many jobs run at once. Keep at 1 unless you know what you're doing:
-# pipeline_lib caches a single global Whisper model instance, so >1 means
-# concurrent threads sharing that model and dub_lib's Piper voice cache
-# without a lock. Raising this is not a supported/tested configuration —
-# it's exposed for experimentation on hosts with real headroom (e.g. an
-# Oracle A1 VM), not turned on by default anywhere.
+# How many jobs run at once. pipeline_lib and dub_lib cache their
+# Whisper model / Piper voices per-thread (threading.local), so this is
+# safe to raise — match it to your host's OCPU count (see README's Oracle
+# section for memory tradeoffs).
 WORKER_COUNT = int(os.environ.get("WORKER_COUNT", "1"))
+
+# Comma-separated Google account emails (case-insensitive) that always get
+# Pro Plus, bypassing Stripe entirely — for the site owner's own personal
+# use/testing, not a general grant mechanism. Checked against the *signed*
+# account cookie set after a real Google sign-in (see auth.py), so this
+# can't be spoofed by a client claiming an arbitrary email — only someone
+# who actually controls that Google account can trigger it.
+ADMIN_EMAILS = {
+    e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
+}
