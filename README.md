@@ -36,6 +36,45 @@ first real request isn't stuck downloading a ~250MB model.
 4. `pick_top_n()` selects the top 3 non-overlapping segments.
 5. `render_clip()` cuts each segment, converts to vertical 1080x1920, burns in short punchy word-chunk captions (timed to actual speech via Whisper's word-level timestamps) plus a watermark (free plan only).
 
+## Split-screen backgrounds (Pro/Pro Plus)
+
+The "Subway Surfers"-style format — the talking clip on top, a looping
+background video on the bottom. `render_split_screen_clip()` in
+`pipeline_lib.py` composites the two with a single `ffmpeg -filter_complex`
+(`vstack`), looping the background indefinitely (`-stream_loop -1`) and
+capping the output at the clip's real duration (`-t`) so a short background
+file never limits how long the composited clip can be. Always renders
+vertical 1080x1920 — a split screen only makes sense in that orientation, so
+it ignores the normal `clip_format` choice. Mutually exclusive with dubbing
+for now (combining them would need a third rendering path with its own
+audio-timing interactions — not worth the complexity for v1).
+
+Two ways to pick a background, both available from Pro/Pro Plus:
+
+- **Stock library** — `backgrounds.py` holds a small, hand-maintained
+  `STOCK_BACKGROUNDS` registry (id → label + filename). **The repo ships
+  with this registry populated but the actual video files NOT included** —
+  see `assets/backgrounds/README.md` for exactly what to add and the
+  licensing to look for (CC0 strongly preferred, since this repo is public).
+  `GET /api/backgrounds` reports each entry's `available` flag so the
+  frontend can grey out ones whose file hasn't been dropped in yet, and
+  picking an unavailable one server-side fails with a clear "not available
+  yet" error rather than crashing a render.
+- **Custom upload** — a second file per job, capped far stricter than the
+  main video upload (`BACKGROUND_UPLOAD_MB`, default 50MB; server-side
+  duration check via `ffprobe`, `MAX_BACKGROUND_DURATION_SEC`, default 60s)
+  since it's just a looping visual layer, not something that needs to be
+  long or high-res — and every split-screen job already costs an extra
+  `ffmpeg` composite pass beyond a normal render. Deleted after the job
+  completes, same as the main upload; stock library files are never deleted
+  (they're shared across every future job).
+
+Security note if you're extending this: background selection only ever
+resolves through `backgrounds.get_background_path()`'s fixed id→path lookup
+or a server-generated upload filename — never a raw user string used
+directly as a path. If you add a way to reference backgrounds by anything
+else, keep that property.
+
 ## Free tier, Pro plan, and ads
 
 - `config.py` holds every setting you need to fill in — Stripe keys, AdSense publisher ID, per-tier plan limits, max upload size. Every placeholder is marked `REPLACE_ME` / `REPLACE-ME`.

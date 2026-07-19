@@ -165,12 +165,14 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     )
     if watermark:
         # Free plan: always the mandatory watermark, never the custom one.
-        vf += pipeline_lib._watermark_filter(pipeline_lib.WATERMARK, "#FFFFFF", out_dir, rank)
+        vf += "," + pipeline_lib._watermark_filter(pipeline_lib.WATERMARK, "#FFFFFF", out_dir, rank)
     elif watermark_text:
         # Pro Plus opt-in custom watermark — see pipeline_lib.render_clip's
         # matching branch for why textfile= is used instead of embedding
         # user-supplied text directly into the filter string.
-        vf += pipeline_lib._watermark_filter(watermark_text, watermark_color, out_dir, rank)
+        wf = pipeline_lib._watermark_filter(watermark_text, watermark_color, out_dir, rank)
+        if wf:
+            vf += "," + wf
     cmd = [
         "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
         "-i", video_path, "-i", stretched_wav,

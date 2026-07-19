@@ -174,16 +174,19 @@ WATERMARK_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def _watermark_filter(text, color, out_dir, rank):
-    """Builds the drawtext filter fragment for a watermark. Writes `text` to
-    a file and references it via drawtext's textfile= option rather than
-    interpolating it into the filter string with text='...' -- `text` can be
-    arbitrary user input (the Pro Plus custom watermark), and ffmpeg's
-    filtergraph syntax treats ':', ',', '\\' and "'" as structural, so
-    embedding it inline would let watermark text break out of the filter or
-    inject additional filter directives. A textfile's *contents* are just
-    read as bytes, sidestepping that whole class of injection. Only `color`
-    still gets validated + inlined, since it's parsed as a color name/hex.
-    Returns "" if text is empty after sanitizing."""
+    """Builds the bare drawtext filter fragment for a watermark (no leading
+    comma/label -- callers chain it onto either a simple -vf string or a
+    labeled -filter_complex graph, which need different connective syntax).
+    Writes `text` to a file and references it via drawtext's textfile=
+    option rather than interpolating it into the filter string with
+    text='...' -- `text` can be arbitrary user input (the Pro Plus custom
+    watermark), and ffmpeg's filtergraph syntax treats ':', ',', '\\' and
+    "'" as structural, so embedding it inline would let watermark text break
+    out of the filter or inject additional filter directives. A textfile's
+    *contents* are just read as bytes, sidestepping that whole class of
+    injection. Only `color` still gets validated + inlined, since it's
+    parsed as a color name/hex. Returns "" if text is empty after
+    sanitizing."""
     clean_text = " ".join(text.split())[:40] if text else ""
     if not clean_text:
         return ""
@@ -191,7 +194,7 @@ def _watermark_filter(text, color, out_dir, rank):
     with open(text_path, "w") as f:
         f.write(clean_text)
     ffmpeg_color = f"0x{color[1:]}" if color and WATERMARK_COLOR_RE.match(color) else "white"
-    return f",drawtext=textfile={text_path}:fontcolor={ffmpeg_color}@0.6:fontsize=18:x=(w-text_w)/2:y=h-70"
+    return f"drawtext=textfile={text_path}:fontcolor={ffmpeg_color}@0.6:fontsize=18:x=(w-text_w)/2:y=h-70"
 
 
 def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="vertical", caption_style="bold",
@@ -226,12 +229,14 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
     )
     if watermark:
         # Free plan: always the mandatory watermark, never the custom one.
-        vf += _watermark_filter(WATERMARK, "#FFFFFF", out_dir, rank)
+        vf += "," + _watermark_filter(WATERMARK, "#FFFFFF", out_dir, rank)
     elif watermark_text:
         # Pro Plus opt-in custom watermark. Pro/Pro Plus are otherwise
         # watermark-free by default (see caller) -- this only fires if the
         # user explicitly set one in Settings.
-        vf += _watermark_filter(watermark_text, watermark_color, out_dir, rank)
+        wf = _watermark_filter(watermark_text, watermark_color, out_dir, rank)
+        if wf:
+            vf += "," + wf
     cmd = [
         "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
         "-i", video_path, "-vf", vf,
@@ -245,8 +250,83 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
     return out_path, result.returncode == 0, result.stderr[-800:]
 
 
+def render_split_screen_clip(video_path, seg, out_dir, rank, background_path, watermark=True, caption_style="bold",
+                              watermark_text=None, watermark_color=None):
+    """Top half: the talking-head clip. Bottom half: a looping background
+    video (stock library or a Pro Plus custom upload) -- the "Subway
+    Surfers"-style split-screen format. Always renders vertical 1080x1920;
+    a split screen only really makes sense in that orientation, so this
+    intentionally ignores clip_format rather than also supporting
+    square/horizontal split layouts.
+
+    background_path is always server-resolved before this is called --
+    either through backgrounds.get_background_path()'s fixed id->path
+    registry lookup, or a server-generated upload filename, the same way
+    video_path always is -- never built from a raw user-supplied string, so
+    there's no path-injection surface here beyond what render_clip already
+    has to deal with."""
+    srt_text = build_word_chunk_srt(seg["words"], seg["start"])
+    virality = seg.get("virality_score", 0)
+    srt_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.srt")
+    with open(srt_path, "w") as f:
+        f.write(srt_text)
+
+    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_split.mp4")
+    clip_duration = max(0.1, seg["end"] - seg["start"])
+
+    caption_styles = {
+        "bold": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,Bold=1,Alignment=2,MarginV=880",
+        "outline": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=4,Bold=0,Alignment=2,MarginV=880",
+        "subtle": "FontName=DejaVu Sans,FontSize=28,PrimaryColour=&HB8B8B8,OutlineColour=&H000000,BorderStyle=1,Outline=1,Bold=0,Alignment=2,MarginV=880",
+        "neon": "FontName=DejaVu Sans,FontSize=32,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Bold=1,Alignment=2,MarginV=880,BackColour=&H00000080",
+    }
+    # MarginV=880 (vs. render_clip's 140) sits captions near the boundary
+    # between the two halves instead of hugging the very bottom of the
+    # frame, which would land them in the middle of the busy background
+    # loop -- much harder to read against motion than against the darker,
+    # more static talking-head half just above the split.
+    caption_style_str = caption_styles.get(caption_style, caption_styles["bold"])
+
+    filter_complex = (
+        "[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1[top];"
+        "[1:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1[bottom];"
+        "[top][bottom]vstack=inputs=2[stacked];"
+        f"[stacked]subtitles={srt_path}:force_style='{caption_style_str}'[captioned]"
+    )
+    final_label = "captioned"
+    if watermark:
+        # Free plan: always the mandatory watermark, never the custom one.
+        filter_complex += f";[captioned]{_watermark_filter(WATERMARK, '#FFFFFF', out_dir, rank)}[final]"
+        final_label = "final"
+    elif watermark_text:
+        wf = _watermark_filter(watermark_text, watermark_color, out_dir, rank)
+        if wf:
+            filter_complex += f";[captioned]{wf}[final]"
+            final_label = "final"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(seg["start"]), "-to", str(seg["end"]), "-i", video_path,
+        # -stream_loop -1 loops the background indefinitely; the -t on the
+        # output below is what actually caps the render to the clip's real
+        # duration, so this never produces a runaway-length output even if
+        # the background file is shorter than the clip.
+        "-stream_loop", "-1", "-i", background_path,
+        "-filter_complex", filter_complex,
+        "-map", f"[{final_label}]", "-map", "0:a",
+        "-t", str(clip_duration),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+        out_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return out_path, False, f"ffmpeg render timed out after {RENDER_TIMEOUT}s"
+    return out_path, result.returncode == 0, result.stderr[-800:]
+
+
 def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None, clip_format="vertical", caption_style="bold",
-                   watermark_text=None, watermark_color=None):
+                   watermark_text=None, watermark_color=None, background_path=None):
     os.makedirs(out_dir, exist_ok=True)
 
     # Bound worst-case time on the single-worker queue before Whisper (which
@@ -281,6 +361,16 @@ def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None,
                 watermark_text=watermark_text, watermark_color=watermark_color,
             )
             text = translated_text
+        elif background_path:
+            # Split-screen and dubbing are mutually exclusive for now (kept
+            # that way at the app.py layer too) -- combining them means a
+            # third rendering path with its own audio-mapping/timing
+            # interactions, not worth the complexity for a v1.
+            out_path, ok, err = render_split_screen_clip(
+                video_path, seg, out_dir, i, background_path, watermark=watermark,
+                caption_style=caption_style, watermark_text=watermark_text, watermark_color=watermark_color,
+            )
+            text = seg["text"]
         else:
             out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark, clip_format=clip_format,
                                              caption_style=caption_style, watermark_text=watermark_text, watermark_color=watermark_color)

@@ -241,6 +241,16 @@
       <p class="dub-hint">Choose how captions appear on your clips.</p>
     </div>
 
+    <div class="dub-row" id="splitScreenRow">
+      <label for="splitScreenBg">Split-screen background <span class="pro-tag">Pro</span></label>
+      <select id="splitScreenBg">
+        <option value="">Off — normal full-frame clip</option>
+        <option value="custom">Upload my own background…</option>
+      </select>
+      <input type="file" id="splitScreenBgFile" accept="video/*" style="display:none;margin-top:8px;" />
+      <p class="dub-hint">Talking clip on top, a looping background on the bottom — the "Subway Surfers" format. Always renders vertical 9:16.</p>
+    </div>
+
     <div class="dub-row" id="notifyRow" style="display:none">
       <label for="notifyEmail">Email me when it's ready</label>
       <input type="email" id="notifyEmail" placeholder="you@example.com" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;" />
@@ -342,6 +352,8 @@
     const batchQueue = document.getElementById('batchQueue');
     const queueList = document.getElementById('queueList');
     const processBatchBtn = document.getElementById('processBatchBtn');
+    const splitScreenBg = document.getElementById('splitScreenBg');
+    const splitScreenBgFile = document.getElementById('splitScreenBgFile');
 
     const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
     let fileQueue = []; // for batch uploads
@@ -366,6 +378,12 @@
       if (watermark && watermark.text && watermark.text.trim()) {
         formData.append('watermark_text', watermark.text.trim());
         formData.append('watermark_color', watermark.color || '#ffffff');
+      }
+      if (splitScreenBg.value) {
+        formData.append('background_id', splitScreenBg.value);
+        if (splitScreenBg.value === 'custom' && splitScreenBgFile.files[0]) {
+          formData.append('background_file', splitScreenBgFile.files[0]);
+        }
       }
       return formData;
     }
@@ -404,6 +422,7 @@
           adSlot.style.display = 'none';
           paywall.style.display = 'none';
           dubLang.disabled = false;
+          splitScreenBg.disabled = false;
         } else {
           usageNote.textContent = data.remaining > 0
             ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
@@ -412,6 +431,10 @@
           adSlot.style.display = 'block';
           dubLang.disabled = true;
           dubLang.value = '';
+          splitScreenBg.disabled = true;
+          splitScreenBg.value = '';
+          splitScreenBgFile.style.display = 'none';
+          splitScreenBgFile.value = '';
         }
 
         // Show quota badge with color coding for every tier now that all of
@@ -433,6 +456,47 @@
 
     upgradeBtn.addEventListener('click', () => {
       window.location.href = '/pricing';
+    });
+
+    async function loadBackgroundOptions() {
+      try {
+        const res = await fetch('/api/backgrounds');
+        const data = await res.json();
+        const customOption = splitScreenBg.querySelector('option[value="custom"]');
+        data.backgrounds.forEach(bg => {
+          const opt = document.createElement('option');
+          opt.value = bg.id;
+          opt.textContent = bg.available ? bg.label : `${bg.label} (coming soon)`;
+          opt.disabled = !bg.available;
+          splitScreenBg.insertBefore(opt, customOption);
+        });
+      } catch (e) {
+        console.error('Failed to load background list:', e);
+      }
+    }
+    loadBackgroundOptions();
+
+    // Split-screen and dubbing are mutually exclusive server-side (see
+    // /process) -- reset the other one here instead of letting the user
+    // round-trip into that error after uploading.
+    splitScreenBg.addEventListener('change', () => {
+      splitScreenBgFile.style.display = splitScreenBg.value === 'custom' ? 'block' : 'none';
+      if (!splitScreenBg.value) splitScreenBgFile.value = '';
+      if (splitScreenBg.value) {
+        dubLang.value = '';
+        clipFormat.value = 'vertical';
+        clipFormat.disabled = true;
+      } else {
+        clipFormat.disabled = false;
+      }
+    });
+    dubLang.addEventListener('change', () => {
+      if (dubLang.value) {
+        splitScreenBg.value = '';
+        splitScreenBgFile.style.display = 'none';
+        splitScreenBgFile.value = '';
+        clipFormat.disabled = false;
+      }
     });
 
     function addFilesToQueue(files) {
@@ -742,7 +806,7 @@
       "how long": "Usually 2–5 minutes depending on video length. Transcription is typically the longest step.",
       "what videos work": "Best: podcasts, interviews, talks, sermons, lectures. Avoid: music-only, silent footage.",
       "why failed": "Most common: video too short, no clear speech, or unsupported codec. Try a longer video with clearer audio.",
-      "what is pro": "Pro ($15/mo) gives you 20 videos/month instead of 5, removes the watermark, and unlocks dubbing to Spanish/French/Portuguese. Pro Plus ($29/mo) bumps that to 50/month.",
+      "what is pro": "Pro ($15/mo) gives you 20 videos/month instead of 5, removes the watermark, unlocks dubbing to Spanish/French/Portuguese, and split-screen backgrounds. Pro Plus ($29/mo) bumps that to 50/month.",
       "how download": "Each clip has a download button. Or use 'Download All as ZIP' to get all 3 clips + metadata in one file.",
       "can i edit": "Peakcut auto-cuts and captions. For further editing, download the MP4 and use CapCut, Adobe Premiere, or similar.",
       "refund": "We process refunds within 5–7 business days. Contact support@peakcut.example with your order details.",

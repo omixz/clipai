@@ -79,6 +79,14 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
 # it's read independently there, same as WHISPER_MODEL, so the pipeline has
 # no import-time dependency on config.py.
 
+# Split-screen (Pro/Pro Plus): a second, much smaller/shorter upload for the
+# bottom-half background loop. Deliberately far stricter than MAX_UPLOAD_MB —
+# it's just a looping visual layer, not something that needs to be long or
+# high-res, and every split-screen job already costs an extra ffmpeg
+# composite pass on top of the normal render.
+BACKGROUND_UPLOAD_MB = int(os.environ.get("BACKGROUND_UPLOAD_MB", "50"))
+MAX_BACKGROUND_DURATION_SEC = int(os.environ.get("MAX_BACKGROUND_DURATION_SEC", "60"))
+
 # How many jobs run at once. Keep at 1 unless you know what you're doing:
 # pipeline_lib caches a single global Whisper model instance, so >1 means
 # concurrent threads sharing that model and dub_lib's Piper voice cache

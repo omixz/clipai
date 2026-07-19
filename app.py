@@ -22,6 +22,7 @@ from fastapi.responses import (
 )
 
 import auth
+import backgrounds
 import config
 import email_lib
 import pipeline_lib
@@ -355,6 +356,7 @@ def _worker():
                 dub_lang=job.get("dub_lang"), clip_format=job.get("clip_format", "vertical"),
                 caption_style=job.get("caption_style", "bold"),
                 watermark_text=job.get("watermark_text"), watermark_color=job.get("watermark_color"),
+                background_path=job.get("background_path"),
             )
             if not result["clips"]:
                 raise RuntimeError("no usable clips found")
@@ -368,6 +370,16 @@ def _worker():
                 Path(job["input_path"]).unlink(missing_ok=True)
             except Exception:
                 pass
+            # Same idea for a custom split-screen background upload -- but
+            # only when it's actually a job-scoped upload (lives inside this
+            # job's own directory), never a shared stock library file from
+            # assets/backgrounds/, which every future job needs to keep using.
+            bg_path = job.get("background_path")
+            if bg_path and str(job_dir) in bg_path:
+                try:
+                    Path(bg_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
             if job.get("notify_email"):
                 email_lib.send_done_email(
                     job["notify_email"], [c["url"] for c in clips], result["duration"], job["is_pro"]
@@ -485,6 +497,17 @@ def robots():
     return "User-agent: *\nAllow: /\nDisallow: /jobs/\n"
 
 
+@app.get("/api/backgrounds")
+def api_backgrounds():
+    """Split-screen (Pro/Pro Plus) stock background library, for the
+    frontend to render as options. `available` reflects whether the actual
+    video file has been dropped into assets/backgrounds/ yet (see that
+    folder's README) -- registering an id in backgrounds.py doesn't require
+    the file to exist, so the UI can show it as coming-soon instead of just
+    omitting it."""
+    return {"backgrounds": backgrounds.list_backgrounds()}
+
+
 @app.get("/usage")
 def usage(request: Request):
     identity = get_identity(request)
@@ -548,7 +571,8 @@ def check_ip_rate_limit(ip: str) -> bool:
 async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None),
                    notify_email: str | None = Form(None), clip_format: str = Form("vertical"),
                    caption_style: str = Form("bold"), watermark_text: str | None = Form(None),
-                   watermark_color: str | None = Form(None)):
+                   watermark_color: str | None = Form(None), background_id: str | None = Form(None),
+                   background_file: UploadFile | None = File(None)):
     if clip_format not in ("vertical", "square", "horizontal"):
         raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
     if caption_style not in ("bold", "outline", "subtle", "neon"):
@@ -584,6 +608,23 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
             raise HTTPException(status_code=400, detail="Unsupported dub language.")
         if not is_pro:
             raise HTTPException(status_code=402, detail="Dubbing is a Pro feature. Upgrade to Pro to dub clips into other languages.")
+
+    # Split-screen (bottom-half background) is a Pro/Pro Plus perk, same
+    # silently-ignored-for-lower-tiers treatment as the custom watermark --
+    # not an error, since settings/UI state could be stale.
+    if not is_pro:
+        background_id = None
+        background_file = None
+    if background_id and dub_lang:
+        raise HTTPException(status_code=400, detail="Split-screen background and dubbing can't be used together yet.")
+    if background_id and background_id != "custom" and background_id not in backgrounds.STOCK_BACKGROUNDS:
+        raise HTTPException(status_code=400, detail="Unknown background id.")
+    if background_id and background_id != "custom" and not backgrounds.get_background_path(background_id):
+        raise HTTPException(status_code=400, detail="That background isn't available yet — pick another one.")
+    if background_id == "custom" and not background_file:
+        raise HTTPException(status_code=400, detail="Upload a background video, or pick one from the library instead.")
+    if background_id != "custom":
+        background_file = None  # ignore a stray upload if a stock id was actually selected
 
     if notify_email and not EMAIL_RE.match(notify_email):
         raise HTTPException(status_code=400, detail="That doesn't look like a valid email address.")
@@ -629,10 +670,50 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         log.exception("upload failed")
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
+    # Resolve the actual background path now, at upload time -- a bad/oversized
+    # custom background should fail fast with a clear error and never consume
+    # a queue slot or a monthly quota unit, the same reasoning as every other
+    # validation above happening before reserve_use.
+    background_path = None
+    if background_id and background_id != "custom":
+        background_path = backgrounds.get_background_path(background_id)  # re-checked; can't race-vanish mid-request either way
+    elif background_id == "custom" and background_file:
+        bg_ext = Path(background_file.filename or "").suffix.lower()
+        if bg_ext not in config.ALLOWED_EXTENSIONS:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            refund_use(identity)
+            raise HTTPException(status_code=400, detail=f"Unsupported background file type '{bg_ext}'.")
+        bg_path = job_dir / f"background{bg_ext}"
+        bg_max_bytes = config.BACKGROUND_UPLOAD_MB * 1024 * 1024
+        bg_size = 0
+        try:
+            with open(bg_path, "wb") as f:
+                while chunk := await background_file.read(1024 * 1024):
+                    bg_size += len(chunk)
+                    if bg_size > bg_max_bytes:
+                        raise HTTPException(status_code=413, detail=f"Background video too large — the limit is {config.BACKGROUND_UPLOAD_MB}MB.")
+                    f.write(chunk)
+        except HTTPException:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            refund_use(identity)
+            raise
+        except Exception:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            refund_use(identity)
+            log.exception("background upload failed")
+            raise HTTPException(status_code=500, detail="Background upload failed — please try again.")
+
+        bg_duration = pipeline_lib.probe_duration(str(bg_path))
+        if bg_duration and bg_duration > config.MAX_BACKGROUND_DURATION_SEC:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            refund_use(identity)
+            raise HTTPException(status_code=400, detail=f"Background video is too long — the limit is {config.MAX_BACKGROUND_DURATION_SEC}s.")
+        background_path = str(bg_path)
+
     _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
              input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
              notify_email=notify_email, clip_format=clip_format, caption_style=caption_style,
-             watermark_text=watermark_text, watermark_color=watermark_color)
+             watermark_text=watermark_text, watermark_color=watermark_color, background_path=background_path)
     try:
         _enqueue_job(job_id, tier)
     except queue.Full:
