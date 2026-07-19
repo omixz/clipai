@@ -66,6 +66,39 @@ stripe.api_key = config.STRIPE_SECRET_KEY
 
 app = FastAPI()
 
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Baseline response headers with no functional dependency on the rest
+    of the app -- deliberately NOT including Content-Security-Policy here.
+    Every HTML page in this app relies on inline <script>/<style> tags, so a
+    CSP strict enough to matter would need a nonce-based refactor across all
+    of them to avoid silently breaking the site; a CSP loose enough not to
+    (allowing 'unsafe-inline') would give essentially none of CSP's real
+    protection anyway. Worth doing properly as dedicated follow-up work, not
+    as a bolt-on here."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # DENY, not SAMEORIGIN -- nothing in this app is meant to be iframed,
+    # including by itself, so there's no reason to allow same-origin framing
+    # either (which SAMEORIGIN would still permit e.g. a compromised
+    # subdomain or the site framing its own upload form for a clickjacking
+    # trick against the paywall/upgrade buttons).
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # This app never uses any of these; explicitly disabling them means an
+    # embedded/compromised third-party script (e.g. if the AdSense slot ever
+    # got compromised) can't invoke them either.
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    if config.COOKIE_SECURE:
+        # Only when actually serving over HTTPS (see config.COOKIE_SECURE) --
+        # sending this over plain HTTP does nothing (browsers ignore
+        # Strict-Transport-Security on non-HTTPS responses) and there's no
+        # reason to even try during local http://localhost:8000 dev.
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 # ── Usage tracking (monthly counter for every tier, not just free) ──────────
 # Every plan is advertised as N videos *per month* (pricing.html), but the
 # original counter never reset and Pro/Pro Plus skipped it entirely (only an
