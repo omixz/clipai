@@ -143,7 +143,7 @@
     <div class="section">
       <h2>Billing</h2>
       <div id="billingInfo"></div>
-      <button class="primary" onclick="manageBilling()">Manage Billing in PayPal</button>
+      <button id="manageBillingBtn" class="primary" onclick="manageBilling()" style="display:none">Manage Billing in PayPal</button>
     </div>
 
     <div class="danger-zone">
@@ -187,6 +187,30 @@
         if (data.plan === 'plus') {
           document.getElementById('watermarkSection').style.display = 'block';
           loadWatermarkSettings();
+        }
+
+        // "Manage Billing" only makes sense (and only goes somewhere
+        // correct) for a PayPal subscription -- a bank-transfer or admin
+        // account has no processor portal to send them to. Previously this
+        // button always said "Manage Billing in PayPal" and always linked
+        // to /billing-portal regardless of billing_source, which silently
+        // bounced bank-transfer customers back to the homepage with zero
+        // explanation.
+        const billingInfoEl = document.getElementById('billingInfo');
+        const billingBtn = document.getElementById('manageBillingBtn');
+        if (data.billing_source === 'paypal') {
+          billingInfoEl.textContent = '';
+          billingBtn.style.display = '';
+          billingBtn.textContent = 'Manage Billing in PayPal';
+        } else if (data.billing_source === 'manual') {
+          billingInfoEl.textContent = 'Billed via direct bank transfer. To cancel or change plans, contact support.';
+          billingBtn.style.display = 'none';
+        } else if (data.billing_source === 'admin') {
+          billingInfoEl.textContent = 'Free Pro Plus access (admin account) — nothing to manage.';
+          billingBtn.style.display = 'none';
+        } else {
+          billingInfoEl.textContent = "You're on the Free plan.";
+          billingBtn.style.display = 'none';
         }
 
         loadApiKeys();

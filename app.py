@@ -267,8 +267,9 @@ def get_identity(request: Request) -> str:
 TIER_LIMITS = {"free": config.FREE_LIMIT, "pro": config.PRO_LIMIT, "pro_plus": config.PRO_PLUS_LIMIT}
 
 
-def get_account_tier(request: Request) -> str:
-    """'free' | 'pro' | 'pro_plus'. Three sources, checked in order:
+def get_account_tier_and_source(request: Request) -> tuple[str, str | None]:
+    """(tier, source) where source is 'admin' | 'manual' | 'paypal' | None
+    (None only when tier is 'free'). Three sources, checked in order:
     1. Admin allowlist (config.ADMIN_EMAILS) -- always Pro Plus.
     2. Manual grants (MANUAL_GRANTS_FILE) -- the active path while billing
        is direct bank transfer with no processor API to check against; an
@@ -279,26 +280,34 @@ def get_account_tier(request: Request) -> str:
     3. PayPal (PAYPAL_SUBS_FILE) -- keyed off `identity` rather than a
        separate signed cookie, and always double-checked live against
        billing_lib.get_subscription() so a cancelled subscription stops
-       granting Pro without depending on any webhook actually arriving."""
-    if config.ADMIN_EMAILS:
-        account = get_account(request)
-        if account and account.get("email", "").lower() in config.ADMIN_EMAILS:
-            return "pro_plus"
+       granting Pro without depending on any webhook actually arriving.
 
+    The source matters beyond just logging: /billing-portal and the
+    settings page's "Manage Billing" button need to know it, since a
+    bank-transfer customer has no PayPal subscription to manage there --
+    treating every Pro account as "must have a PayPal subscription" was a
+    real bug (silent redirect home, no explanation) until this existed."""
     account = get_account(request)
+    if config.ADMIN_EMAILS and account and account.get("email", "").lower() in config.ADMIN_EMAILS:
+        return "pro_plus", "admin"
+
     if account:
         granted = load_manual_grants().get(account.get("email", "").lower())
         if granted in ("pro", "pro_plus"):
-            return granted
+            return granted, "manual"
 
     identity = get_identity(request)
     subscription_id = load_paypal_subs().get(identity)
-    if not subscription_id:
-        return "free"
-    sub = billing_lib.get_subscription(subscription_id)
-    if not sub or sub["status"] not in billing_lib.PAID_STATUSES:
-        return "free"
-    return billing_lib.tier_for_plan(sub["plan_id"])
+    if subscription_id:
+        sub = billing_lib.get_subscription(subscription_id)
+        if sub and sub["status"] in billing_lib.PAID_STATUSES:
+            return billing_lib.tier_for_plan(sub["plan_id"]), "paypal"
+
+    return "free", None
+
+
+def get_account_tier(request: Request) -> str:
+    return get_account_tier_and_source(request)[0]
 
 
 def check_pro_status(request: Request) -> bool:
@@ -641,7 +650,7 @@ def api_backgrounds():
 def usage(request: Request):
     identity = get_identity(request)
     account = get_account(request)
-    tier = get_account_tier(request)
+    tier, billing_source = get_account_tier_and_source(request)
     limit = TIER_LIMITS[tier]
     used = peek_usage(identity)
     resp = JSONResponse({
@@ -651,6 +660,7 @@ def usage(request: Request):
         "signed_in": account is not None,
         "email": account["email"] if account else None,
         "email_configured": config.EMAIL_CONFIGURED,
+        "billing_source": billing_source,
     })
     set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
@@ -1093,15 +1103,24 @@ def create_checkout_session_plus(request: Request):
 
 @app.get("/billing-portal")
 def billing_portal(request: Request):
-    """PayPal has no per-subscription self-serve portal link the way Stripe
-    / Lemon Squeezy did (no API returns one) — the closest equivalent is
-    PayPal's own automatic-payments management page under the subscriber's
-    own PayPal account, which they'd already be logged into to have
-    subscribed in the first place."""
-    identity = get_identity(request)
-    if not load_paypal_subs().get(identity):
-        return RedirectResponse(f"{config.SITE_URL}/", status_code=303)
-    return RedirectResponse("https://www.paypal.com/myaccount/autopay/", status_code=303)
+    """Where this sends someone depends entirely on *how* they're paying --
+    there's no single "billing portal" concept spanning both paths:
+    - PayPal: no per-subscription self-serve portal link the way Stripe /
+      Lemon Squeezy had (no API returns one) -- the closest equivalent is
+      PayPal's own automatic-payments management page under the
+      subscriber's own PayPal account, which they'd already be logged
+      into to have subscribed in the first place.
+    - Manual (bank transfer): there's no processor account to manage at
+      all -- cancelling just means not sending next month's transfer, and
+      an admin removes the grant once they notice. Redirecting a
+      bank-transfer customer to PayPal's site here would be actively
+      wrong, not just unhelpful, so this checks the tier source first."""
+    _, source = get_account_tier_and_source(request)
+    if source == "paypal":
+        return RedirectResponse("https://www.paypal.com/myaccount/autopay/", status_code=303)
+    if source == "manual":
+        return RedirectResponse(f"{config.SITE_URL}/settings?billing=manual", status_code=303)
+    return RedirectResponse(f"{config.SITE_URL}/", status_code=303)
 
 
 @app.get("/confirm-checkout")
