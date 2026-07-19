@@ -150,7 +150,7 @@
       "rank": 1,
       "text": "This is the best moment from your video",
       "virality_score": 87,
-      "download_url": "https://clipai-tgnv.onrender.com/jobs/abc12345/peakcut_rank1_v87_vertical.mp4"
+      "download_url": "__SITE_URL__/jobs/abc12345/peakcut_rank1_v87_vertical.mp4"
     }
   ]
 }</pre></div>
@@ -162,7 +162,7 @@
       <h2>Example: cURL</h2>
       <div class="code-block"><pre>
 # Submit a video
-curl -X POST https://clipai-tgnv.onrender.com/api/v1/process \
+curl -X POST __SITE_URL__/api/v1/process \
   -H "Authorization: Bearer pk_your_api_key_here" \
   -F "file=@video.mp4" \
   -F "clip_format=vertical"
@@ -170,7 +170,7 @@ curl -X POST https://clipai-tgnv.onrender.com/api/v1/process \
 # Response: {"job_id": "abc12345", "status": "queued"}
 
 # Poll for results (repeat until status is "done")
-curl https://clipai-tgnv.onrender.com/api/v1/clips/abc12345 \
+curl __SITE_URL__/api/v1/clips/abc12345 \
   -H "Authorization: Bearer pk_your_api_key_here"
       </pre></div>
     </div>
@@ -182,7 +182,7 @@ import requests
 import time
 
 API_KEY = "pk_your_api_key_here"
-BASE_URL = "https://clipai-tgnv.onrender.com"
+BASE_URL = "__SITE_URL__"
 
 # Submit video
 with open("video.mp4", "rb") as f:
