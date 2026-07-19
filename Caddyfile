@@ -1,7 +1,6 @@
 # Caddy gets and renews an HTTPS certificate automatically (Let's Encrypt) for
-# whatever hostname is here — replace with your real domain or free DuckDNS
-# hostname (e.g. peakcut.duckdns.org) before starting. A bare IP address
-# cannot get a valid certificate; you need *some* DNS hostname pointing here.
-your-hostname-here.duckdns.org {
+# whatever hostname is here. A bare IP address cannot get a valid
+# certificate; this needs the DuckDNS hostname pointed at the VM's public IP.
+peakclip.duckdns.org {
 	reverse_proxy app:8000
 }
