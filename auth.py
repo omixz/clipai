@@ -97,3 +97,34 @@ def read_account_cookie(token: str) -> dict | None:
     except Exception:
         log.exception("failed to parse account cookie")
         return None
+
+
+# clipai_customer holds a Stripe customer id and is trusted at face value
+# (get_account_tier/billing_portal query Stripe directly with whatever value
+# is in it, with zero further verification) -- but Stripe customer ids are
+# NOT secrets by Stripe's own design (they show up in dashboard URLs,
+# receipts, webhook payloads, support tickets...), so an unsigned cookie lets
+# anyone who learns/guesses another customer's id set it as their own cookie
+# and get that customer's Pro/Pro Plus tier for free -- or worse, open that
+# customer's actual Stripe billing portal (their payment methods, invoices,
+# ability to cancel their subscription) via billing_portal. Signed with a
+# distinct salt from the account cookie so the two can't be swapped for
+# each other even though both use the same underlying secret key.
+_customer_serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-customer-v1")
+CUSTOMER_MAX_AGE = 60 * 60 * 24 * 365
+
+
+def sign_customer_cookie(customer_id: str) -> str:
+    return _customer_serializer.dumps({"customer_id": customer_id})
+
+
+def read_customer_cookie(token: str) -> str | None:
+    if not token:
+        return None
+    try:
+        return _customer_serializer.loads(token, max_age=CUSTOMER_MAX_AGE)["customer_id"]
+    except BadSignature:
+        return None
+    except Exception:
+        log.exception("failed to parse customer cookie")
+        return None

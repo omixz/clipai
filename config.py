@@ -49,6 +49,11 @@ EMAIL_CONFIGURED = RESEND_API_KEY != "re_REPLACE_ME"
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "support@peakcut.example")
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
+# Every cookie this app sets should be marked Secure once actually deployed
+# behind HTTPS (Caddy/Render both terminate TLS) -- derived from SITE_URL's
+# scheme rather than hardcoded True so http://localhost:8000 still works for
+# local dev (a browser silently drops a Secure cookie set over plain HTTP).
+COOKIE_SECURE = SITE_URL.startswith("https://")
 
 # Monthly video caps per web tier — must match what pricing.html advertises.
 # Pro/Pro Plus used to be unlimited in practice (only an active subscription

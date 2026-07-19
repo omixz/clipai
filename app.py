@@ -3,6 +3,7 @@ import json
 import logging
 import queue
 import re
+import secrets
 import shutil
 import threading
 import time
@@ -118,6 +119,15 @@ def get_client_id(request: Request) -> str:
     return request.state.clipai_cid
 
 
+def set_session_cookie(resp, name: str, value: str, max_age: int):
+    """Every cookie this app sets goes through here so none of them can
+    individually forget httponly/samesite/secure. secure is derived from
+    config.SITE_URL's scheme (see there) rather than hardcoded True, so
+    local dev over http://localhost:8000 still works — a browser silently
+    drops a Secure cookie set over a plain HTTP response."""
+    resp.set_cookie(name, value, max_age=max_age, httponly=True, samesite="lax", secure=config.COOKIE_SECURE)
+
+
 def get_account(request: Request) -> dict | None:
     """The signed-in Google account, if any — see auth.py. Returns
     {"sub": ..., "email": ...} or None."""
@@ -146,8 +156,11 @@ def get_account_tier(request: Request) -> str:
     customer ID cookie set after checkout, never from local storage, which is
     wiped on every restart on disk-less hosts (Render free tier included).
     Distinguishes the two paid tiers by the subscribed price ID so each gets
-    its own monthly cap instead of both being treated as the same "Pro"."""
-    customer_id = request.cookies.get("clipai_customer")
+    its own monthly cap instead of both being treated as the same "Pro".
+    The cookie is signed (see auth.read_customer_cookie) so a client can't
+    just set clipai_customer=<any Stripe customer id it finds> and claim
+    that customer's paid tier — Stripe customer ids are not secrets."""
+    customer_id = auth.read_customer_cookie(request.cookies.get("clipai_customer"))
     if not customer_id:
         return "free"
     try:
@@ -469,15 +482,24 @@ def usage(request: Request):
         "email": account["email"] if account else None,
         "email_configured": config.EMAIL_CONFIGURED,
     })
-    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
 
 
 def get_request_ip(request: Request) -> str:
+    """Used only for check_ip_rate_limit, so this needs to resist spoofing,
+    not just be "a" client IP. Both supported deployments (Caddy on Oracle,
+    Render's own edge) sit as exactly one reverse-proxy hop in front of this
+    app, and a reverse proxy APPENDS the real peer IP to any pre-existing
+    X-Forwarded-For header rather than replacing it -- so the last entry is
+    the one our own proxy can vouch for, while every earlier entry is
+    whatever the client itself sent and freely spoofable. Taking the FIRST
+    entry (the naive/common approach) would let any client bypass the entire
+    per-IP rate limit just by sending its own X-Forwarded-For header with a
+    fake IP prepended."""
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -597,8 +619,7 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
     resp = JSONResponse({"job_id": job_id, "status": "queued"})
-    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
 
 
@@ -680,7 +701,7 @@ def google_login(request: Request):
         log.exception("failed to build Google login URL")
         raise HTTPException(status_code=502, detail="Couldn't reach Google right now — try again shortly.")
     resp = RedirectResponse(login_url, status_code=303)
-    resp.set_cookie(auth.STATE_COOKIE, state, max_age=600, httponly=True, samesite="lax")
+    set_session_cookie(resp, auth.STATE_COOKIE, state, max_age=600)
     return resp
 
 
@@ -690,7 +711,7 @@ def google_callback(request: Request, code: str | None = None, state: str | None
         return RedirectResponse(f"{config.SITE_URL}/?auth_error=1", status_code=303)
 
     expected_state = request.cookies.get(auth.STATE_COOKIE)
-    if not code or not state or not expected_state or state != expected_state:
+    if not code or not state or not expected_state or not secrets.compare_digest(state, expected_state):
         raise HTTPException(status_code=400, detail="Invalid or expired sign-in attempt — please try again.")
 
     try:
@@ -706,8 +727,7 @@ def google_callback(request: Request, code: str | None = None, state: str | None
 
     account_token = auth.sign_account_cookie(claims["sub"], claims["email"])
     resp = RedirectResponse(f"{config.SITE_URL}/?signed_in=1", status_code=303)
-    resp.set_cookie(auth.ACCOUNT_COOKIE, account_token, max_age=auth.ACCOUNT_MAX_AGE,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, auth.ACCOUNT_COOKIE, account_token, max_age=auth.ACCOUNT_MAX_AGE)
     resp.delete_cookie(auth.STATE_COOKIE)
     return resp
 
@@ -740,8 +760,7 @@ def create_checkout_session(request: Request):
         raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
 
     resp = RedirectResponse(session.url, status_code=303)
-    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
 
 
@@ -765,16 +784,19 @@ def create_checkout_session_plus(request: Request):
         raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
 
     resp = RedirectResponse(session.url, status_code=303)
-    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
 
 
 @app.get("/billing-portal")
 def billing_portal(request: Request):
     """Lets a Pro subscriber manage or cancel their own subscription without
-    emailing support — Stripe hosts the actual portal page."""
-    customer_id = request.cookies.get("clipai_customer")
+    emailing support — Stripe hosts the actual portal page. The cookie is
+    signature-verified (see get_account_tier) since an unverified customer id
+    here wouldn't just grant a free upgrade, it would open a stranger's real
+    Stripe billing portal — their payment methods, invoices, and ability to
+    cancel their subscription."""
+    customer_id = auth.read_customer_cookie(request.cookies.get("clipai_customer"))
     if not customer_id:
         return RedirectResponse(f"{config.SITE_URL}/", status_code=303)
     try:
@@ -791,7 +813,8 @@ def billing_portal(request: Request):
 def confirm_checkout(session_id: str):
     """Stripe redirects here after checkout. The session is looked up
     server-to-server (can't be spoofed by editing the URL); on success the
-    Stripe customer ID goes in a cookie and Pro is checked live from then on —
+    Stripe customer ID goes in a signed cookie (see auth.sign_customer_cookie
+    for why it can't just be a raw id) and Pro is checked live from then on —
     see check_pro_status for why nothing is persisted locally."""
     try:
         session = stripe.checkout.Session.retrieve(session_id)
@@ -801,8 +824,7 @@ def confirm_checkout(session_id: str):
 
     resp = RedirectResponse(f"{config.SITE_URL}/?upgraded=1", status_code=303)
     if session.payment_status in ("paid", "no_payment_required") and session.customer:
-        resp.set_cookie("clipai_customer", session.customer, max_age=60 * 60 * 24 * 365,
-                          httponly=True, samesite="lax")
+        set_session_cookie(resp, "clipai_customer", auth.sign_customer_cookie(session.customer), max_age=60 * 60 * 24 * 365)
     return resp
 
 
@@ -850,8 +872,7 @@ def create_api_key(request: Request):
     if api_key is None:
         raise HTTPException(status_code=400, detail=f"Limit of {MAX_API_KEYS_PER_IDENTITY} API keys reached. Deactivate an existing key before creating another.")
     resp = JSONResponse({"api_key": api_key, "tier": tier})
-    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
 
 
@@ -877,8 +898,7 @@ def list_api_keys(request: Request):
         if info.get("identity") == identity
     ]
     resp = JSONResponse({"keys": user_keys})
-    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
-                     httponly=True, samesite="lax")
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
 
 
