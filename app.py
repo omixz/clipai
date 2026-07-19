@@ -300,36 +300,32 @@ def get_identity(request: Request) -> str:
 TIER_LIMITS = {"free": config.FREE_LIMIT, "pro": config.PRO_LIMIT, "pro_plus": config.PRO_PLUS_LIMIT}
 
 
-def get_account_tier_and_source(request: Request) -> tuple[str, str | None]:
-    """(tier, source) where source is 'admin' | 'manual' | 'paypal' | None
-    (None only when tier is 'free'). Three sources, checked in order:
+def compute_tier_and_source(identity: str, email: str | None) -> tuple[str, str | None]:
+    """Core tier lookup, independent of any particular request -- used both
+    for the web/cookie path (get_account_tier_and_source below) and for
+    keeping an API key's tier live instead of frozen at creation time (see
+    refresh_api_key_tier). (tier, source) where source is 'admin' |
+    'manual' | 'crypto' | 'paypal' | None (None only when tier is 'free').
+    Checked in order:
     1. Admin allowlist (config.ADMIN_EMAILS) -- always Pro Plus.
-    2. Manual grants (MANUAL_GRANTS_FILE) -- the active path while billing
-       is direct bank transfer with no processor API to check against; an
-       admin sets this by hand after seeing a payment land (see
-       /admin/billing). This is the one tier source in this file that's
-       genuinely trusted from local storage rather than checked live,
-       because there's nothing live to check it against.
-    3. PayPal (PAYPAL_SUBS_FILE) -- keyed off `identity` rather than a
-       separate signed cookie, and always double-checked live against
-       billing_lib.get_subscription() so a cancelled subscription stops
-       granting Pro without depending on any webhook actually arriving.
-
-    The source matters beyond just logging: /billing-portal and the
-    settings page's "Manage Billing" button need to know it, since a
-    bank-transfer customer has no PayPal subscription to manage there --
-    treating every Pro account as "must have a PayPal subscription" was a
-    real bug (silent redirect home, no explanation) until this existed."""
-    account = get_account(request)
-    if config.ADMIN_EMAILS and account and account.get("email", "").lower() in config.ADMIN_EMAILS:
+    2. Manual grants (MANUAL_GRANTS_FILE) -- an admin's hand-typed grant
+       after a bank transfer, or an automated one from the NOWPayments
+       webhook (see /crypto/webhook) -- either way, the one tier source
+       here that's genuinely trusted from local storage rather than
+       checked live, because there's nothing live to check it against.
+    3. PayPal (PAYPAL_SUBS_FILE) -- keyed off `identity`, always
+       double-checked live against billing_lib.get_subscription() so a
+       cancelled subscription stops granting Pro without depending on any
+       webhook actually arriving."""
+    email = (email or "").lower()
+    if config.ADMIN_EMAILS and email and email in config.ADMIN_EMAILS:
         return "pro_plus", "admin"
 
-    if account:
-        granted = load_manual_grants().get(account.get("email", "").lower())
+    if email:
+        granted = load_manual_grants().get(email)
         if granted and granted.get("tier") in ("pro", "pro_plus"):
             return granted["tier"], granted.get("source", "manual")
 
-    identity = get_identity(request)
     subscription_id = load_paypal_subs().get(identity)
     if subscription_id:
         sub = billing_lib.get_subscription(subscription_id)
@@ -337,6 +333,16 @@ def get_account_tier_and_source(request: Request) -> tuple[str, str | None]:
             return billing_lib.tier_for_plan(sub["plan_id"]), "paypal"
 
     return "free", None
+
+
+def get_account_tier_and_source(request: Request) -> tuple[str, str | None]:
+    """The source matters beyond just logging: /billing-portal and the
+    settings page's "Manage Billing" button need to know it, since a
+    bank-transfer customer has no PayPal subscription to manage there --
+    treating every Pro account as "must have a PayPal subscription" was a
+    real bug (silent redirect home, no explanation) until this existed."""
+    account = get_account(request)
+    return compute_tier_and_source(get_identity(request), account["email"] if account else None)
 
 
 def get_account_tier(request: Request) -> str:
@@ -365,12 +371,17 @@ def save_api_keys(data):
         _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
 
 
-def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = None) -> str | None:
+def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = None, email: str | None = None) -> str | None:
     """Generate a new API key for a user. Tier can be 'free', 'pro', or
     'pro_plus'. If max_keys is set, the existing-count check and the insert
     happen under the same lock so two concurrent requests can't both slip
     past the cap the way a check-then-act version would; returns None if the
-    cap is already hit."""
+    cap is already hit. `email` is stored alongside identity purely so
+    refresh_api_key_tier can re-derive the *current* tier later (manual
+    grants are keyed by email, not identity) -- without it, a key created
+    while Pro would keep granting Pro-tier API access forever even after
+    the subscription was cancelled or the grant revoked, since nothing else
+    here ever re-checks it."""
     api_key = f"pk_{uuid.uuid4().hex[:32]}"
     with _api_lock:
         data = json.loads(API_KEYS_FILE.read_text())
@@ -389,6 +400,7 @@ def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = N
             # key again — list_api_keys only shows a masked version of that.
             "key_id": uuid.uuid4().hex[:12],
             "identity": identity,
+            "email": email,
             "tier": tier,
             "created": time.time(),
             "period": current_period(),
@@ -397,6 +409,26 @@ def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = N
         }
         _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
     return api_key
+
+
+def refresh_api_key_tier(api_key: str) -> dict | None:
+    """Re-derives this key's tier from its owner's *current* billing state
+    (same lookup compute_tier_and_source uses for the web session path) and
+    persists it if it changed, before returning the up-to-date key record.
+    Called on every API request rather than trusting the tier snapshotted
+    at key-creation time -- see generate_api_key's docstring for why that
+    snapshot alone was a real bug (a cancelled/revoked subscriber's key
+    kept its paid tier's quota and priority forever)."""
+    with _api_lock:
+        data = json.loads(API_KEYS_FILE.read_text())
+        key_data = data.get("keys", {}).get(api_key)
+        if not key_data:
+            return None
+        live_tier, _source = compute_tier_and_source(key_data.get("identity", ""), key_data.get("email"))
+        if key_data.get("tier") != live_tier:
+            key_data["tier"] = live_tier
+            _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
+        return key_data
 
 
 def get_api_key_info(api_key: str) -> dict | None:
@@ -1363,8 +1395,9 @@ def create_api_key(request: Request):
     # identity on every request -- the key would be created under one cid and
     # be permanently unlistable/unrevokable under the next.
     identity = get_identity(request)
+    account = get_account(request)
     tier = get_account_tier(request)
-    api_key = generate_api_key(identity, tier, max_keys=MAX_API_KEYS_PER_IDENTITY)
+    api_key = generate_api_key(identity, tier, max_keys=MAX_API_KEYS_PER_IDENTITY, email=account["email"] if account else None)
     if api_key is None:
         raise HTTPException(status_code=400, detail=f"Limit of {MAX_API_KEYS_PER_IDENTITY} API keys reached. Deactivate an existing key before creating another.")
     resp = JSONResponse({"api_key": api_key, "tier": tier})
@@ -1380,19 +1413,23 @@ def list_api_keys(request: Request):
 
     identity = get_identity(request)
     data = load_api_keys()
-    user_keys = [
-        {
+    user_keys = []
+    for key, info in data.get("keys", {}).items():
+        if info.get("identity") != identity:
+            continue
+        # Refresh against current billing state before displaying -- see
+        # refresh_api_key_tier's docstring for why the tier stored at
+        # key-creation time can't just be trusted forever.
+        current = refresh_api_key_tier(key) or info
+        user_keys.append({
             "key_id": info.get("key_id"),  # used to revoke this key; the real key is never shown again
             "api_key": key[:12] + "***" + key[-4:],  # masked, display only
-            "tier": info["tier"],
+            "tier": current["tier"],
             "created": info["created"],
             "usage_this_month": info.get("usage_this_month", 0),
-            "monthly_limit": API_TIER_LIMITS.get(info.get("tier", "free"), API_TIER_LIMITS["free"]),
+            "monthly_limit": API_TIER_LIMITS.get(current["tier"], API_TIER_LIMITS["free"]),
             "active": info.get("active", True),
-        }
-        for key, info in data.get("keys", {}).items()
-        if info.get("identity") == identity
-    ]
+        })
     resp = JSONResponse({"keys": user_keys})
     set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
     return resp
@@ -1435,7 +1472,12 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header. Use: Authorization: Bearer <api_key>")
 
     api_key = auth_header[7:]  # strip "Bearer "
-    key_info = get_api_key_info(api_key)
+    # Refreshed, not just fetched -- see refresh_api_key_tier's docstring:
+    # this is the route that actually spends quota and decides queue
+    # priority/watermark, so it's the one place a stale tier snapshot would
+    # matter most (a cancelled Pro Plus subscriber's key silently keeping
+    # 2000 calls/month and priority processing forever otherwise).
+    key_info = refresh_api_key_tier(api_key)
     if not key_info or not key_info.get("active"):
         raise HTTPException(status_code=401, detail="Invalid or inactive API key.")
 
