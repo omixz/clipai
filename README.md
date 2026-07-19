@@ -164,22 +164,23 @@ Redeploying after a code change: `cd /opt/peakcut && git pull && sudo docker
 compose up -d --build` — no CI/CD wired up, matching how deploys to Render
 were done manually via API throughout this project.
 
-**Using the extra RAM.** The one-worker-at-a-time design (see "How it works"
-above) is deliberate and stays on by default even here — it's what keeps
-memory use predictable, not just what fits Render's 512MB. On Oracle's extra
-headroom you have two independent knobs, and they trade off differently:
+**Using the extra RAM.** On Render's 512MB free tier, the app ran one job at
+a time by design to keep memory predictable. On Oracle's extra headroom you
+have two independent knobs, and they trade off differently:
 
 - `WHISPER_MODEL=base` or `small` (env var, default `tiny`) — better
-  transcription accuracy, same one-job-at-a-time safety, no code changes.
-  This is the one to reach for first.
+  transcription accuracy, no code changes.
 - `WORKER_COUNT=2` (env var, default `1`) — processes that many jobs
-  concurrently instead of one at a time. This is **not a supported/tested
-  configuration**: `pipeline_lib.py` caches a single global Whisper model
-  instance and `dub_lib.py` caches Piper voices in a plain dict, neither
-  guarded by a lock, so concurrent workers share that state across threads.
-  It's exposed for experimentation on a box with real headroom, not something
-  this project has verified is safe under load — raise it deliberately, watch
-  memory, and be ready to drop it back to 1.
+  concurrently instead of one at a time, so a burst of uploads doesn't queue
+  behind a single in-progress video. Each worker thread now caches its own
+  Whisper model and Piper voices (`threading.local()` in `pipeline_lib.py`
+  and `dub_lib.py`) instead of sharing one global — that used to make
+  concurrent workers an unsupported configuration (a lazy-init race, and a
+  dub job's model-unload yanking the model out from under every other
+  worker mid-job); both are fixed now. Raise this to roughly your VM's OCPU
+  count (e.g. `2` on a 2-OCPU Ampere instance) — each worker adds ~75MB
+  baseline (the `tiny` Whisper model) plus whatever it's actively rendering,
+  so watch memory if you also bump `WHISPER_MODEL` to `base`/`small`.
 
 Unlike Render's free tier, `docker-compose.yml` gives the app container a real
 persistent volume for `jobs/` — it survives restarts here, though Pro status

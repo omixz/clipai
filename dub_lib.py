@@ -21,6 +21,7 @@ import concurrent.futures
 import logging
 import os
 import subprocess
+import threading
 
 from deep_translator import GoogleTranslator
 from piper import PiperVoice
@@ -60,14 +61,23 @@ DUB_LANGUAGES = {
     "pt": {"label": "Portuguese", "voice": "pt_BR-faber-medium"},
 }
 
-_voice_cache: dict = {}
+# Thread-local for the same reason as pipeline_lib's Whisper model cache:
+# with WORKER_COUNT>1, a shared global dict here had the same lazy-init race
+# (two worker threads both missing the cache and both loading the same
+# voice) -- keeping it thread-local removes the race and any cross-worker
+# interference entirely.
+_local = threading.local()
 
 
 def get_voice(lang_code: str) -> PiperVoice:
-    if lang_code not in _voice_cache:
+    cache = getattr(_local, "voice_cache", None)
+    if cache is None:
+        cache = {}
+        _local.voice_cache = cache
+    if lang_code not in cache:
         model_path = os.path.join(VOICES_DIR, f"{DUB_LANGUAGES[lang_code]['voice']}.onnx")
-        _voice_cache[lang_code] = PiperVoice.load(model_path)
-    return _voice_cache[lang_code]
+        cache[lang_code] = PiperVoice.load(model_path)
+    return cache[lang_code]
 
 
 def translate_text(text: str, target_lang: str, source_lang: str = "en") -> str:

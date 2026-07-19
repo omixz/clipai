@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import os
+import threading
 from faster_whisper import WhisperModel
 
 WATERMARK = "FREE PLAN — Peakcut"
@@ -15,26 +16,37 @@ AUDIO_ANALYSIS_TIMEOUT = int(os.environ.get("AUDIO_ANALYSIS_TIMEOUT_SECONDS", "6
 RENDER_TIMEOUT = int(os.environ.get("FFMPEG_TIMEOUT_SECONDS", "300"))
 MAX_VIDEO_DURATION_MIN = int(os.environ.get("MAX_VIDEO_DURATION_MIN", "45"))
 
-_model = None
+# One model per worker thread rather than a single shared global: with
+# WORKER_COUNT>1 (app.py spawns that many _worker threads), a shared global
+# had two live bugs -- a lazy-init race where two threads could both see
+# None and both construct a WhisperModel, and unload_model() (called mid-dub
+# job) yanking the model out from under every *other* worker thread too,
+# forcing them to reload from disk mid-job. thread-local storage makes each
+# worker fully independent, at the cost of one model per thread instead of
+# one process-wide (tiny model is ~75MB, cheap for the WORKER_COUNT this is
+# meant to support).
+_local = threading.local()
 
 
 def get_model():
-    global _model
-    if _model is None:
-        _model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-    return _model
+    model = getattr(_local, "model", None)
+    if model is None:
+        model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+        _local.model = model
+    return model
 
 
 def unload_model():
-    """Free the cached Whisper model. Normally it's kept warm across jobs to
-    avoid reloading it every time, but a dub job also needs Argos Translate +
-    Piper TTS loaded at the same time — measured peak RSS with all three
-    resident was 1.15GB, well over Render's 512MB free-tier cap. Whisper is
-    only needed for the transcription step, so for dub jobs we drop it right
-    after and eat a reload on the next job instead of risking an OOM kill."""
-    global _model
+    """Free this worker thread's cached Whisper model. Normally it's kept
+    warm across jobs to avoid reloading it every time, but a dub job also
+    needs Argos Translate + Piper TTS loaded at the same time — measured
+    peak RSS with all three resident was 1.15GB, well over Render's 512MB
+    free-tier cap. Whisper is only needed for the transcription step, so for
+    dub jobs this worker drops it right after and eats a reload on its next
+    job instead of risking an OOM kill. Thread-local, so this never affects
+    models cached by other worker threads."""
     import gc
-    _model = None
+    _local.model = None
     gc.collect()
 
 
