@@ -1,3 +1,4 @@
+import itertools
 import json
 import logging
 import queue
@@ -45,9 +46,19 @@ stripe.api_key = config.STRIPE_SECRET_KEY
 
 app = FastAPI()
 
-# ── Usage tracking (free-tier counter only — Pro is checked live via Stripe) ──
+# ── Usage tracking (monthly counter for every tier, not just free) ──────────
+# Every plan is advertised as N videos *per month* (pricing.html), but the
+# original counter never reset and Pro/Pro Plus skipped it entirely (only an
+# active subscription was checked, never a count) — a subscriber got
+# unlimited processing on the same one-worker queue everyone shares, and Pro
+# vs Pro Plus were functionally identical. current_period() ties each
+# counter to a calendar month so it rolls over on its own with no cron job.
 
 _usage_lock = threading.Lock()
+
+
+def current_period() -> str:
+    return time.strftime("%Y-%m", time.gmtime())
 
 
 def load_usage():
@@ -55,33 +66,45 @@ def load_usage():
         return json.loads(USAGE_FILE.read_text())
 
 
-def save_usage(data):
-    with _usage_lock:
-        USAGE_FILE.write_text(json.dumps(data))
+def _period_rec(data, key):
+    rec = data.get(key)
+    if not rec or rec.get("period") != current_period():
+        rec = {"period": current_period(), "used": 0}
+    return rec
 
 
-def reserve_free_use(cid) -> bool:
-    """Atomically check-and-increment the free counter. Returns False if the
-    limit is already reached. Single lock section so two concurrent uploads
-    can't both pass the check."""
+def reserve_use(key, limit) -> bool:
+    """Atomically check-and-increment this period's counter for `key`.
+    Returns False if `limit` is already reached. Single lock section so two
+    concurrent uploads can't both pass the check."""
     with _usage_lock:
         data = json.loads(USAGE_FILE.read_text())
-        rec = data.get(cid, {"used": 0})
-        if rec["used"] >= config.FREE_LIMIT:
+        rec = _period_rec(data, key)
+        if rec["used"] >= limit:
+            data[key] = rec  # persist a rolled-over period even on rejection
+            USAGE_FILE.write_text(json.dumps(data))
             return False
         rec["used"] += 1
-        data[cid] = rec
+        data[key] = rec
         USAGE_FILE.write_text(json.dumps(data))
         return True
 
 
-def refund_free_use(cid):
+def refund_use(key):
     with _usage_lock:
         data = json.loads(USAGE_FILE.read_text())
-        rec = data.get(cid, {"used": 0})
+        rec = _period_rec(data, key)
         rec["used"] = max(0, rec["used"] - 1)
-        data[cid] = rec
+        data[key] = rec
         USAGE_FILE.write_text(json.dumps(data))
+
+
+def peek_usage(key) -> int:
+    data = load_usage()
+    rec = data.get(key)
+    if not rec or rec.get("period") != current_period():
+        return 0
+    return rec["used"]
 
 
 def get_client_id(request: Request) -> str:
@@ -115,19 +138,36 @@ def get_identity(request: Request) -> str:
     return f"cid:{get_client_id(request)}"
 
 
-def check_pro_status(request: Request) -> bool:
-    """Pro status is checked live against Stripe via a customer ID cookie set
-    after checkout — never from local storage, which is wiped on every restart
-    on disk-less hosts (Render free tier included)."""
+TIER_LIMITS = {"free": config.FREE_LIMIT, "pro": config.PRO_LIMIT, "pro_plus": config.PRO_PLUS_LIMIT}
+
+
+def get_account_tier(request: Request) -> str:
+    """'free' | 'pro' | 'pro_plus' — checked live against Stripe via a
+    customer ID cookie set after checkout, never from local storage, which is
+    wiped on every restart on disk-less hosts (Render free tier included).
+    Distinguishes the two paid tiers by the subscribed price ID so each gets
+    its own monthly cap instead of both being treated as the same "Pro"."""
     customer_id = request.cookies.get("clipai_customer")
     if not customer_id:
-        return False
+        return "free"
     try:
         subs = stripe.Subscription.list(customer=customer_id, status="active", limit=1)
-        return len(subs.data) > 0
+        if not subs.data:
+            return "free"
+        price_id = subs.data[0]["items"]["data"][0]["price"]["id"]
+        if price_id == config.STRIPE_PRICE_ID_PLUS:
+            return "pro_plus"
+        return "pro"
     except Exception:
         log.exception("Stripe subscription lookup failed")
-        return False
+        return "free"
+
+
+def check_pro_status(request: Request) -> bool:
+    """True for either paid tier. Kept as a separate helper since most call
+    sites (dubbing gate, watermark, API key tier assignment) only care about
+    free-vs-paid, not which paid tier."""
+    return get_account_tier(request) != "free"
 
 
 # ── API Key Management ──────────────────────────────────────────────────────
@@ -156,6 +196,7 @@ def generate_api_key(identity: str, tier: str = "free") -> str:
             "identity": identity,
             "tier": tier,
             "created": time.time(),
+            "period": current_period(),
             "usage_this_month": 0,
             "active": True,
         }
@@ -169,25 +210,31 @@ def get_api_key_info(api_key: str) -> dict | None:
     return data.get("keys", {}).get(api_key)
 
 
+API_TIER_LIMITS = {"free": config.API_FREE_LIMIT, "pro": config.API_PRO_LIMIT, "pro_plus": config.API_PRO_PLUS_LIMIT}
+
+
 def increment_api_usage(api_key: str) -> bool:
-    """Increment usage counter for an API key. Returns False if rate limited."""
-    info = get_api_key_info(api_key)
-    if not info:
-        return False
-
-    limits = {"free": 100, "pro": 500, "pro_plus": 2000}
-    monthly_limit = limits.get(info.get("tier", "free"), 100)
-
+    """Increment this calendar month's usage counter for an API key. Returns
+    False if rate limited. Rolls the counter over to 0 the first time it's
+    touched in a new month, the same way reserve_use does for web usage —
+    previously usage_this_month only ever grew, so "500 calls/month" was
+    actually "500 calls ever" once hit."""
     with _api_lock:
         data = json.loads(API_KEYS_FILE.read_text())
         key_data = data.get("keys", {}).get(api_key)
         if not key_data or not key_data.get("active"):
             return False
 
-        key_data["usage_this_month"] = key_data.get("usage_this_month", 0) + 1
-        if key_data["usage_this_month"] > monthly_limit:
+        if key_data.get("period") != current_period():
+            key_data["period"] = current_period()
+            key_data["usage_this_month"] = 0
+
+        monthly_limit = API_TIER_LIMITS.get(key_data.get("tier", "free"), API_TIER_LIMITS["free"])
+        if key_data["usage_this_month"] >= monthly_limit:
+            API_KEYS_FILE.write_text(json.dumps(data, indent=2))  # persist rollover even on rejection
             return False
 
+        key_data["usage_this_month"] += 1
         API_KEYS_FILE.write_text(json.dumps(data, indent=2))
     return True
 
@@ -197,13 +244,21 @@ def increment_api_usage(api_key: str) -> bool:
 # would OOM a 512MB instance. The upload endpoint returns a job id instantly
 # and the front-end polls /job/{id} — this keeps the site responsive during
 # the minutes-long processing and avoids gateway timeouts on long requests.
+#
+# The queue is priority-ordered (pro_plus, then pro, then free), FIFO within
+# a tier — this is what actually delivers the "priority processing queue"
+# pricing.html promises API Pro/Pro Plus; previously that line was pure
+# marketing copy with zero backing code, and a free-tier upload could sit a
+# paying customer behind it with no way to jump the line.
 
 MAX_QUEUE = 10
 JOB_MAX_AGE_SECONDS = 24 * 60 * 60
+QUEUE_PRIORITY = {"pro_plus": 0, "pro": 1, "free": 2}
 
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
-_job_queue: "queue.Queue[str]" = queue.Queue(maxsize=MAX_QUEUE)
+_job_queue: "queue.PriorityQueue[tuple[int, int, str]]" = queue.PriorityQueue(maxsize=MAX_QUEUE)
+_job_seq = itertools.count()
 
 
 def _set_job(job_id, **fields):
@@ -217,18 +272,32 @@ def _get_job(job_id):
         return dict(job) if job else None
 
 
+def _enqueue_job(job_id, tier):
+    """Assigns this job its priority/sequence and puts it on the priority
+    queue. Raises queue.Full if the queue is already at MAX_QUEUE (the
+    caller is responsible for cleanup on that path, same as before)."""
+    priority = QUEUE_PRIORITY.get(tier, QUEUE_PRIORITY["free"])
+    seq = next(_job_seq)
+    _set_job(job_id, priority=priority, seq=seq)
+    _job_queue.put_nowait((priority, seq, job_id))
+
+
 def _queue_position(job_id):
     with _jobs_lock:
-        queued = [jid for jid, j in _jobs.items() if j.get("status") == "queued"]
-    try:
-        return queued.index(job_id) + 1
-    except ValueError:
-        return None
+        job = _jobs.get(job_id)
+        if not job or job.get("status") != "queued":
+            return None
+        this_key = (job.get("priority", QUEUE_PRIORITY["free"]), job.get("seq", 0))
+        ahead = sum(
+            1 for j in _jobs.values()
+            if j.get("status") == "queued" and (j.get("priority", QUEUE_PRIORITY["free"]), j.get("seq", 0)) < this_key
+        )
+    return ahead + 1
 
 
 def _worker():
     while True:
-        job_id = _job_queue.get()
+        _priority, _seq, job_id = _job_queue.get()
         job = _get_job(job_id)
         if not job:
             continue
@@ -262,16 +331,22 @@ def _worker():
             # actual reason rather than the generic message below.
             log.info("job %s rejected: %s", job_id, e)
             shutil.rmtree(job_dir, ignore_errors=True)
-            if not job.get("is_pro", True) and job.get("identity"):
-                refund_free_use(job["identity"])
+            # Every web tier now reserves a monthly slot (see reserve_use) —
+            # API jobs pass an "apikey:..." identity that was never reserved
+            # here, so this is a harmless no-op for them (floors at 0).
+            if job.get("identity"):
+                refund_use(job["identity"])
             _set_job(job_id, status="failed", error=str(e), finished_at=time.time())
             if job.get("notify_email"):
                 email_lib.send_failed_email(job["notify_email"], str(e))
         except Exception as e:
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
-            if not job.get("is_pro", True) and job.get("identity"):
-                refund_free_use(job["identity"])
+            # Every web tier now reserves a monthly slot (see reserve_use) —
+            # API jobs pass an "apikey:..." identity that was never reserved
+            # here, so this is a harmless no-op for them (floors at 0).
+            if job.get("identity"):
+                refund_use(job["identity"])
             error_str = str(e).lower()
             if "no speech" in error_str or "no usable" in error_str:
                 error_msg = "No clear speech detected. Try a video with louder, clearer audio or more talking."
@@ -281,13 +356,14 @@ def _worker():
                 error_msg = "Video format not supported. Try MP4, MOV, WEBM, or MKV."
             else:
                 error_msg = "Processing failed — the video may be too short, silent, or an unsupported codec. Try a longer video with clearer speech."
-            error_msg += " Your free video was not used up; please try again."
+            error_msg += " This didn't count against your monthly plan; please try again."
             _set_job(job_id, status="failed", error=error_msg, finished_at=time.time())
             if job.get("notify_email"):
                 email_lib.send_failed_email(job["notify_email"], error_msg)
 
 
-threading.Thread(target=_worker, daemon=True).start()
+for _ in range(max(1, config.WORKER_COUNT)):
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def cleanup_old_jobs():
@@ -366,11 +442,12 @@ def robots():
 def usage(request: Request):
     identity = get_identity(request)
     account = get_account(request)
-    rec = load_usage().get(identity, {"used": 0})
-    is_pro = check_pro_status(request)
-    remaining = None if is_pro else max(0, config.FREE_LIMIT - rec["used"])
+    tier = get_account_tier(request)
+    limit = TIER_LIMITS[tier]
+    used = peek_usage(identity)
     resp = JSONResponse({
-        "used": rec["used"], "pro": is_pro, "limit": config.FREE_LIMIT, "remaining": remaining,
+        "used": used, "pro": tier != "free", "plan": "plus" if tier == "pro_plus" else tier,
+        "limit": limit, "remaining": max(0, limit - used),
         "google_configured": config.GOOGLE_SIGNIN_CONFIGURED,
         "signed_in": account is not None,
         "email": account["email"] if account else None,
@@ -428,7 +505,8 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         raise HTTPException(status_code=401, detail="Sign in with Google to process a video.")
 
     identity = get_identity(request)
-    is_pro = check_pro_status(request)
+    tier = get_account_tier(request)
+    is_pro = tier != "free"
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in config.ALLOWED_EXTENSIONS:
@@ -447,8 +525,13 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
     if _job_queue.full():
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
-    if not is_pro and not reserve_free_use(identity):
-        raise HTTPException(status_code=402, detail=f"Free plan limit reached ({config.FREE_LIMIT} videos/month). Upgrade to Pro for unlimited clips.")
+    limit = TIER_LIMITS[tier]
+    if not reserve_use(identity, limit):
+        plan_name = {"free": "Free", "pro": "Pro", "pro_plus": "Pro Plus"}[tier]
+        upsell = "Upgrade to Pro for more." if tier == "free" else (
+            "Upgrade to Pro Plus for more." if tier == "pro" else "Contact support for a custom plan."
+        )
+        raise HTTPException(status_code=402, detail=f"{plan_name} plan limit reached ({limit} videos/month). {upsell}")
 
     job_id = str(uuid.uuid4())[:8]
     job_dir = JOBS_DIR / job_id
@@ -466,13 +549,11 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
                 f.write(chunk)
     except HTTPException:
         shutil.rmtree(job_dir, ignore_errors=True)
-        if not is_pro:
-            refund_free_use(identity)
+        refund_use(identity)
         raise
     except Exception:
         shutil.rmtree(job_dir, ignore_errors=True)
-        if not is_pro:
-            refund_free_use(identity)
+        refund_use(identity)
         log.exception("upload failed")
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
@@ -480,13 +561,12 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
              input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
              notify_email=notify_email, clip_format=clip_format, caption_style=caption_style)
     try:
-        _job_queue.put_nowait(job_id)
+        _enqueue_job(job_id, tier)
     except queue.Full:
         shutil.rmtree(job_dir, ignore_errors=True)
         with _jobs_lock:
             _jobs.pop(job_id, None)
-        if not is_pro:
-            refund_free_use(identity)
+        refund_use(identity)
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
     resp = JSONResponse({"job_id": job_id, "status": "queued"})
@@ -725,7 +805,7 @@ def create_api_key(request: Request):
         raise HTTPException(status_code=401, detail="Sign in required to create API keys.")
 
     identity = get_identity(request)
-    tier = "pro" if check_pro_status(request) else "free"
+    tier = get_account_tier(request)
     api_key = generate_api_key(identity, tier)
     return {"api_key": api_key, "tier": tier}
 
@@ -765,9 +845,10 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
         raise HTTPException(status_code=401, detail="Invalid or inactive API key.")
 
     if not increment_api_usage(api_key):
+        limits_str = ", ".join(f"{t}={n}" for t, n in API_TIER_LIMITS.items())
         raise HTTPException(
             status_code=429,
-            detail=f"API rate limit exceeded for {key_info['tier']} tier. Monthly limits: free=100, pro=500, pro_plus=2000."
+            detail=f"API rate limit exceeded for {key_info['tier']} tier. Monthly limits: {limits_str}."
         )
 
     if clip_format not in ("vertical", "square", "horizontal"):
@@ -804,12 +885,13 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
         log.exception("API upload failed")
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
-    is_pro = key_info.get("tier", "free") in ("pro", "pro_plus")
+    api_tier = key_info.get("tier", "free")
+    is_pro = api_tier in ("pro", "pro_plus")
     _set_job(job_id, status="queued", api_key=True, identity=f"apikey:{api_key}", is_pro=is_pro,
               input_path=str(video_path), created_at=time.time(), dub_lang=None,
               notify_email=None, clip_format=clip_format, caption_style="bold")
     try:
-        _job_queue.put_nowait(job_id)
+        _enqueue_job(job_id, api_tier)
     except queue.Full:
         shutil.rmtree(job_dir, ignore_errors=True)
         with _jobs_lock:

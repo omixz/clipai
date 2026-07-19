@@ -30,7 +30,7 @@ first real request isn't stuck downloading a ~250MB model.
 
 ## How it works
 
-1. `POST /process` accepts a video upload, reserves the free-tier quota, and returns a job id instantly; a single background worker processes jobs one at a time (two concurrent Whisper+ffmpeg runs would OOM a 512MB instance) while the front-end polls `GET /job/{id}` for queued/processing/done/failed. The site stays fully responsive during the minutes-long processing and long uploads can't die at a gateway timeout.
+1. `POST /process` accepts a video upload, reserves that tier's monthly quota, and returns a job id instantly; a single background worker processes jobs one at a time (two concurrent Whisper+ffmpeg runs would OOM a 512MB instance) while the front-end polls `GET /job/{id}` for queued/processing/done/failed. The site stays fully responsive during the minutes-long processing and long uploads can't die at a gateway timeout. The queue is priority-ordered (Pro Plus, then Pro, then Free, FIFO within a tier), a max video length (`MAX_VIDEO_DURATION_MIN`, default 45) is checked via `ffprobe` before Whisper even starts, and every `ffmpeg`/`ffprobe` subprocess call has a timeout — all so one oversized or hung upload can't wedge the single queue for everyone behind it.
 2. `pipeline_lib.transcribe()` runs self-hosted faster-whisper (small model, CPU, int8) — no API key, no per-minute cost.
 3. `score_candidates()` scores every transcript segment by real audio loudness (`ffmpeg astats`) plus cheap text signals (punctuation, contrast words, punchy short words) — no LLM call.
 4. `pick_top_n()` selects the top 3 non-overlapping segments.
@@ -38,9 +38,9 @@ first real request isn't stuck downloading a ~250MB model.
 
 ## Free tier, Pro plan, and ads
 
-- `config.py` holds every setting you need to fill in — Stripe keys, AdSense publisher ID, free-plan limit, max upload size. Every placeholder is marked `REPLACE_ME` / `REPLACE-ME`.
-- Free users are capped at `FREE_LIMIT` (default 1) video. Once Google Sign-In is configured (see below), usage is tracked per Google account (`acct:{sub}`); until then it falls back to a per-browser cookie (`clipai_cid`), which is fine for an MVP but not abuse-proof since clearing cookies resets the counter. Either way the counter lives in `usage.json`, which gets wiped on every redeploy/spin-down on a host with no persistent disk (Render's free tier included) — low stakes for a free counter.
-- **Pro status is deliberately NOT stored in that same file.** The "Upgrade to Pro" button hits `/create-checkout-session` → Stripe Checkout → `/confirm-checkout`, which verifies the session server-side and stores the Stripe customer ID in a cookie (`clipai_customer`). From then on, every request checks that customer's subscription status live against Stripe's API (`check_pro_status` in `app.py`) instead of trusting a local flag. This matters because a local flag would get wiped by the same disk-persistence issue above — and unlike the free counter, losing a paying customer's access on every restart is a real problem, not a minor one. `/stripe/webhook` is still wired up for logging, but Pro access no longer depends on it firing.
+- `config.py` holds every setting you need to fill in — Stripe keys, AdSense publisher ID, per-tier plan limits, max upload size. Every placeholder is marked `REPLACE_ME` / `REPLACE-ME`.
+- Every tier is capped at a monthly video count — `FREE_LIMIT` (default 5), `PRO_LIMIT` (default 20), `PRO_PLUS_LIMIT` (default 50), matching what `pricing.html` advertises. The counter is keyed by identity (Google account once Sign-In is configured, otherwise a per-browser cookie) and tagged with the current `YYYY-MM` period so it resets itself on the 1st with no cron job — see `reserve_use`/`current_period` in `app.py`. It lives in `jobs/usage.json`, which rides the same Docker volume as everything else in `jobs/` so an Oracle VM redeploy doesn't wipe it (on Render's ephemeral free tier it gets wiped on every redeploy/spin-down regardless — low stakes there for the free tier, but see the Oracle section below for why it matters more on a persistent VM).
+- **Pro/Pro Plus tier is deliberately NOT stored in that same file, only the video count is.** The "Upgrade" buttons hit `/create-checkout-session[-plus]` → Stripe Checkout → `/confirm-checkout`, which verifies the session server-side and stores the Stripe customer ID in a cookie (`clipai_customer`). From then on, every request checks that customer's subscription live against Stripe's API and reads which price ID they're on to tell Pro from Pro Plus (`get_account_tier` in `app.py`) instead of trusting a local flag. This matters because a local flag would get wiped by the same disk-persistence issue above — and unlike a video counter, losing a paying customer's tier on every restart is a real problem, not a minor one. `/stripe/webhook` is still wired up for logging, but tier detection no longer depends on it firing.
 - The free-tier ad slot in `index.html` is a placeholder until AdSense approves the site and you paste in your publisher ID.
 
 ### One-time setup to actually take payments and show ads
@@ -101,6 +101,23 @@ proxy and HTTPS yourself (both handled by the files in this repo).
 Redeploying after a code change: `cd /opt/peakcut && git pull && sudo docker
 compose up -d --build` — no CI/CD wired up, matching how deploys to Render
 were done manually via API throughout this project.
+
+**Using the extra RAM.** The one-worker-at-a-time design (see "How it works"
+above) is deliberate and stays on by default even here — it's what keeps
+memory use predictable, not just what fits Render's 512MB. On Oracle's extra
+headroom you have two independent knobs, and they trade off differently:
+
+- `WHISPER_MODEL=base` or `small` (env var, default `tiny`) — better
+  transcription accuracy, same one-job-at-a-time safety, no code changes.
+  This is the one to reach for first.
+- `WORKER_COUNT=2` (env var, default `1`) — processes that many jobs
+  concurrently instead of one at a time. This is **not a supported/tested
+  configuration**: `pipeline_lib.py` caches a single global Whisper model
+  instance and `dub_lib.py` caches Piper voices in a plain dict, neither
+  guarded by a lock, so concurrent workers share that state across threads.
+  It's exposed for experimentation on a box with real headroom, not something
+  this project has verified is safe under load — raise it deliberately, watch
+  memory, and be ready to drop it back to 1.
 
 Unlike Render's free tier, `docker-compose.yml` gives the app container a real
 persistent volume for `jobs/` — it survives restarts here, though Pro status

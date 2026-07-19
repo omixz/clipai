@@ -7,6 +7,14 @@ from faster_whisper import WhisperModel
 WATERMARK = "FREE PLAN — Peakcut"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny")
 
+# Every ffmpeg/ffprobe call below gets a timeout: with a single-worker queue,
+# one hung process (a corrupt file, a pathological codec) would otherwise
+# wedge every job behind it forever, not just fail its own job.
+FFPROBE_TIMEOUT = int(os.environ.get("FFPROBE_TIMEOUT_SECONDS", "20"))
+AUDIO_ANALYSIS_TIMEOUT = int(os.environ.get("AUDIO_ANALYSIS_TIMEOUT_SECONDS", "60"))
+RENDER_TIMEOUT = int(os.environ.get("FFMPEG_TIMEOUT_SECONDS", "300"))
+MAX_VIDEO_DURATION_MIN = int(os.environ.get("MAX_VIDEO_DURATION_MIN", "45"))
+
 _model = None
 
 
@@ -30,6 +38,24 @@ def unload_model():
     gc.collect()
 
 
+def probe_duration(video_path) -> float:
+    """Cheap ffprobe read of container duration, used to reject oversized
+    uploads *before* handing them to Whisper — Whisper has no timeout of its
+    own (it's an in-process call, not a subprocess), so this is what actually
+    bounds a job's worst-case runtime on the single-worker queue. Returns 0.0
+    (i.e. "unknown, don't block") if ffprobe can't read it; transcribe() will
+    surface the real problem if the file is actually bad."""
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", video_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT)
+        return float(result.stdout.strip())
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        return 0.0
+
+
 def transcribe(video_path):
     model = get_model()
     segments, info = model.transcribe(video_path, word_timestamps=True)
@@ -46,7 +72,10 @@ def audio_energy_db(video_path, start, end):
         "ffmpeg", "-hide_banner", "-ss", str(start), "-t", str(duration),
         "-i", video_path, "-af", "astats=metadata=1:reset=1", "-f", "null", "-",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=AUDIO_ANALYSIS_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return -60.0
     matches = re.findall(r"RMS level dB:\s*(-?\d+\.?\d*)", result.stderr)
     vals = [float(m) for m in matches if m != "-inf"]
     return sum(vals) / len(vals) if vals else -60.0
@@ -181,12 +210,25 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
         out_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return out_path, False, f"ffmpeg render timed out after {RENDER_TIMEOUT}s"
     return out_path, result.returncode == 0, result.stderr[-800:]
 
 
 def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None, clip_format="vertical", caption_style="bold"):
     os.makedirs(out_dir, exist_ok=True)
+
+    # Bound worst-case time on the single-worker queue before Whisper (which
+    # has no timeout of its own) ever starts — see probe_duration.
+    duration_probe = probe_duration(video_path)
+    if duration_probe and duration_probe > MAX_VIDEO_DURATION_MIN * 60:
+        raise ValueError(
+            f"Video is too long ({round(duration_probe / 60)} min). "
+            f"Max supported length is {MAX_VIDEO_DURATION_MIN} minutes."
+        )
+
     segments, duration, source_lang = transcribe(video_path)
 
     if dub_lang and source_lang != "en":

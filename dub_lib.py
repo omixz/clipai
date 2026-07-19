@@ -31,6 +31,12 @@ log = logging.getLogger("clipai.dub")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VOICES_DIR = os.environ.get("PIPER_VOICES_DIR", os.path.join(BASE_DIR, "voices"))
 
+# Same reasoning as pipeline_lib's timeouts: a hung ffmpeg call here would
+# otherwise wedge the single-worker queue for every job behind it, not just
+# this one.
+ATEMPO_TIMEOUT = int(os.environ.get("FFMPEG_ATEMPO_TIMEOUT_SECONDS", "60"))
+RENDER_TIMEOUT = pipeline_lib.RENDER_TIMEOUT
+
 # name shown to users -> piper voice file (without .onnx)
 DUB_LANGUAGES = {
     "es": {"label": "Spanish", "voice": "es_ES-carlfm-x_low"},
@@ -87,6 +93,9 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     captions burned from the translated text instead of the original."""
     translated = translate_text(seg["text"], target_lang, source_lang)
     virality = seg.get("virality_score", 0)
+    # Computed up front (not just at the end) so every return path — including
+    # the timeout ones below — has a real path for the manifest's "file" entry.
+    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
 
     raw_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub_raw.wav")
     synthesize_speech(translated, target_lang, raw_wav)
@@ -96,10 +105,14 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     tempo_filter = _atempo_chain(tts_duration / clip_duration)
 
     stretched_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub.wav")
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", raw_wav, "-af", tempo_filter, stretched_wav],
-        capture_output=True, text=True,
-    )
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", raw_wav, "-af", tempo_filter, stretched_wav],
+            capture_output=True, text=True, timeout=ATEMPO_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        os.unlink(raw_wav)
+        return out_path, translated, False, f"ffmpeg tempo-stretch timed out after {ATEMPO_TIMEOUT}s"
     os.unlink(raw_wav)
 
     # Even-spaced pseudo word-chunk captions across the clip's duration —
@@ -121,7 +134,6 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     with open(srt_path, "w") as f:
         f.write("\n".join(lines))
 
-    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
     vf = (
         "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e,"
         f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"
@@ -141,6 +153,10 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
         out_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.unlink(stretched_wav)
+        return out_path, translated, False, f"ffmpeg render timed out after {RENDER_TIMEOUT}s"
     os.unlink(stretched_wav)
     return out_path, translated, result.returncode == 0, result.stderr[-800:]

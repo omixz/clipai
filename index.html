@@ -376,12 +376,15 @@
         notifyRow.style.display = data.email_configured ? 'block' : 'none';
 
         const quotaBadgeContainer = document.getElementById('quotaBadgeContainer');
+        const planLabel = data.plan === 'plus' ? 'Pro Plus' : (data.pro ? 'Pro' : 'Free');
         if (data.pro) {
-          usageNote.innerHTML = 'Pro plan — unlimited videos · <a href="/billing-portal">Manage billing</a>';
+          usageNote.innerHTML = data.remaining > 0
+            ? `${planLabel} plan: ${data.remaining} of ${data.limit} video(s) remaining this month · <a href="/billing-portal">Manage billing</a>`
+            : `${planLabel} plan used up (${data.limit}/${data.limit} this month) · <a href="/billing-portal">Manage billing</a>`;
           proBadge.style.display = 'inline-block';
+          proBadge.textContent = planLabel.toUpperCase();
           adSlot.style.display = 'none';
           paywall.style.display = 'none';
-          quotaBadgeContainer.innerHTML = '';
           dubLang.disabled = false;
         } else {
           usageNote.textContent = data.remaining > 0
@@ -391,16 +394,18 @@
           adSlot.style.display = 'block';
           dubLang.disabled = true;
           dubLang.value = '';
-
-          // Show quota badge with color coding
-          let badgeClass = 'available';
-          if (data.remaining === 0) badgeClass = 'full';
-          else if (data.remaining <= 2) badgeClass = 'warning';
-
-          quotaBadgeContainer.innerHTML = data.remaining > 0
-            ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
-            : `<div class="quota-badge full">⚠️ No videos remaining — upgrade to continue</div>`;
         }
+
+        // Show quota badge with color coding for every tier now that all of
+        // them have a real monthly cap (Pro/Pro Plus used to show nothing
+        // here since they were treated as unlimited).
+        let badgeClass = 'available';
+        if (data.remaining === 0) badgeClass = 'full';
+        else if (data.remaining <= 2) badgeClass = 'warning';
+
+        quotaBadgeContainer.innerHTML = data.remaining > 0
+          ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
+          : `<div class="quota-badge full">⚠️ No videos remaining — ${data.pro ? 'contact support' : 'upgrade'} to continue</div>`;
         return data;
       } catch (e) {
         usageNote.textContent = '';

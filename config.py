@@ -49,6 +49,30 @@ EMAIL_CONFIGURED = RESEND_API_KEY != "re_REPLACE_ME"
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "support@peakcut.example")
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
+
+# Monthly video caps per web tier — must match what pricing.html advertises.
+# Pro/Pro Plus used to be unlimited in practice (only an active subscription
+# was checked, never a count), which both undersold Pro Plus vs Pro and let
+# a single $15/mo account hammer the one-worker queue indefinitely.
 FREE_LIMIT = int(os.environ.get("FREE_LIMIT", "5"))
+PRO_LIMIT = int(os.environ.get("PRO_LIMIT", "20"))
+PRO_PLUS_LIMIT = int(os.environ.get("PRO_PLUS_LIMIT", "50"))
+
+# Monthly call caps per API tier (used by increment_api_usage in app.py).
+API_FREE_LIMIT = int(os.environ.get("API_FREE_LIMIT", "100"))
+API_PRO_LIMIT = int(os.environ.get("API_PRO_LIMIT", "500"))
+API_PRO_PLUS_LIMIT = int(os.environ.get("API_PRO_PLUS_LIMIT", "2000"))
+
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "300"))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
+# MAX_VIDEO_DURATION_MIN (default 45) lives in pipeline_lib.py, not here —
+# it's read independently there, same as WHISPER_MODEL, so the pipeline has
+# no import-time dependency on config.py.
+
+# How many jobs run at once. Keep at 1 unless you know what you're doing:
+# pipeline_lib caches a single global Whisper model instance, so >1 means
+# concurrent threads sharing that model and dub_lib's Piper voice cache
+# without a lock. Raising this is not a supported/tested configuration —
+# it's exposed for experimentation on hosts with real headroom (e.g. an
+# Oracle A1 VM), not turned on by default anywhere.
+WORKER_COUNT = int(os.environ.get("WORKER_COUNT", "1"))
