@@ -282,8 +282,8 @@
     async function generateApiKey() {
       try {
         const res = await fetch('/api/keys', { method: 'POST' });
-        if (!res.ok) throw new Error('Failed to generate API key');
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Failed to generate API key');
         alert(`API key generated:\n\n${data.api_key}\n\nSave this key somewhere safe — you won't see it again!`);
         loadApiKeys();
       } catch (e) {
@@ -303,19 +303,31 @@
           return;
         }
 
-        list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Active keys</h3>' +
+        list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Your keys</h3>' +
           data.keys.map(k => `
             <div class="api-keys">
               <div class="key-item">
                 <div>
-                  <div class="key-value">${escapeHtml(k.api_key)}</div>
-                  <div style="font-size: 0.75rem; color: var(--muted); margin-top: 4px;">${k.tier} • ${k.usage_this_month}/${k.tier === 'free' ? '100' : k.tier === 'pro' ? '500' : '2000'} calls</div>
+                  <div class="key-value">${escapeHtml(k.api_key)}${k.active ? '' : ' <span style="opacity:0.6">(revoked)</span>'}</div>
+                  <div style="font-size: 0.75rem; color: var(--muted); margin-top: 4px;">${k.tier} • ${k.usage_this_month}/${k.monthly_limit} calls</div>
                 </div>
+                ${k.active ? `<button class="secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="revokeApiKey('${k.key_id}')">Revoke</button>` : ''}
               </div>
             </div>
           `).join('');
       } catch (e) {
         console.error('Failed to load API keys:', e);
+      }
+    }
+
+    async function revokeApiKey(keyId) {
+      if (!confirm('Revoke this API key? Anything using it will stop working immediately.')) return;
+      try {
+        const res = await fetch(`/api/keys/${keyId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to revoke API key');
+        loadApiKeys();
+      } catch (e) {
+        alert('Error: ' + e.message);
       }
     }
 

@@ -297,7 +297,7 @@
       <h2>Frequently asked questions</h2>
       <details>
         <summary>Is it really free?</summary>
-        <p>Yes — your first video is free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark.</p>
+        <p>Yes — 5 videos per month are free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark.</p>
       </details>
       <details>
         <summary>How long does it take?</summary>
@@ -352,6 +352,24 @@
       return div.innerHTML;
     }
 
+    // Shared by both the single-file and batch upload paths so they can't
+    // drift out of sync (batch used to silently drop caption_style and the
+    // watermark fields, always falling back to server defaults).
+    function buildUploadFormData(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('clip_format', clipFormat.value);
+      formData.append('caption_style', captionStyle.value);
+      if (dubLang.value) formData.append('dub_lang', dubLang.value);
+      if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+      const watermark = JSON.parse(localStorage.getItem('watermarkSettings') || 'null');
+      if (watermark && watermark.text && watermark.text.trim()) {
+        formData.append('watermark_text', watermark.text.trim());
+        formData.append('watermark_color', watermark.color || '#ffffff');
+      }
+      return formData;
+    }
+
     async function refreshUsage() {
       try {
         const res = await fetch('/usage');
@@ -403,9 +421,10 @@
         if (data.remaining === 0) badgeClass = 'full';
         else if (data.remaining <= 2) badgeClass = 'warning';
 
+        const outOfQuotaAction = data.plan === 'plus' ? 'contact support' : 'upgrade';
         quotaBadgeContainer.innerHTML = data.remaining > 0
           ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
-          : `<div class="quota-badge full">⚠️ No videos remaining — ${data.pro ? 'contact support' : 'upgrade'} to continue</div>`;
+          : `<div class="quota-badge full">⚠️ No videos remaining — ${outOfQuotaAction} to continue</div>`;
         return data;
       } catch (e) {
         usageNote.textContent = '';
@@ -466,11 +485,7 @@
       for (let i = 0; i < fileQueue.length; i++) {
         const file = fileQueue[i];
         statusEl.textContent = `Uploading ${i + 1} of ${fileQueue.length}: ${file.name}…`;
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('clip_format', clipFormat.value);
-        if (dubLang.value) formData.append('dub_lang', dubLang.value);
-        if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+        const formData = buildUploadFormData(file);
         try {
           const res = await fetch('/process', { method: 'POST', body: formData });
           if (res.status === 402) {
@@ -513,12 +528,7 @@
       setBusy(true);
       statusEl.textContent = `Uploading ${file.name}…`;
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('clip_format', clipFormat.value);
-      formData.append('caption_style', captionStyle.value);
-      if (dubLang.value) formData.append('dub_lang', dubLang.value);
-      if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+      const formData = buildUploadFormData(file);
 
       let jobId;
       try {
@@ -608,9 +618,12 @@
         try {
           const res = await fetch(`/job/${jobId}`);
           if (res.status === 404) {
-            // the server restarted and lost the in-memory job — don't spin forever
+            // the server restarted and lost the in-memory job — don't spin forever.
+            // Note: unlike a normal processing failure, the monthly quota slot this
+            // job reserved is NOT automatically refunded in this case (job state is
+            // in-memory only), so we don't claim otherwise here.
             stopped = true;
-            statusEl.textContent = 'Sorry — the server restarted mid-job and your video was lost. Your free video was not used up; please try again.';
+            statusEl.textContent = 'Sorry — the server restarted mid-job and your video was lost. If this used up your monthly quota, contact support and we\'ll sort it out.';
             setBusy(false);
             await refreshUsage();
             return;
@@ -674,9 +687,7 @@
         <h2 style="margin:0;flex:1">Your clips</h2>
         <a href="/jobs/${jobId}/download/all" class="download" style="white-space:nowrap">📦 Download All as ZIP</a>
       </div>` : '';
-      clipsEl.innerHTML = header + clips.map((c, idx) => {
-        const shareText = `"${c.text}"\n\n#shorts #reels #fyp #viral`;
-        return `
+      clipsEl.innerHTML = header + clips.map((c, idx) => `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
@@ -685,18 +696,30 @@
             <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
             <div class="actions">
               <a class="download" href="${encodeURI(c.url)}" download>Download</a>
-              <button class="share-btn" onclick="copyToClipboard('${shareText.replace(/'/g, "\\'")}', this)">Share</button>
+              <button class="share-btn" data-clip-idx="${idx}">Share</button>
               <a class="download" href="https://tiktok.com/upload" target="_blank" style="background:var(--accent);flex:1;text-align:center;text-decoration:none">TikTok ↗</a>
             </div>
           </div>
         </div>
-      `;
-      }).join('');
+      `).join('');
+
+      // Share text is built from clip.text (transcribed speech, which can
+      // rarely include stray quote/HTML-like characters -- Whisper is known
+      // to hallucinate arbitrary text on silent/noisy audio) via a data
+      // attribute + delegated listener rather than inline onclick="...",
+      // which used to hand-escape only single quotes and could be broken
+      // out of by a literal double-quote in the transcript.
+      clipsEl.querySelectorAll('.share-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = clips[Number(btn.dataset.clipIdx)];
+          copyToClipboard(`"${c.text}"\n\n#shorts #reels #fyp #viral`, btn);
+        });
+      });
     }
 
     const params = new URLSearchParams(location.search);
     if (params.get('upgraded') === '1') {
-      statusEl.textContent = '🎉 Pro activated — unlimited videos, no watermark. Thanks for upgrading!';
+      statusEl.textContent = '🎉 Upgrade activated — more videos per month, no watermark. Thanks for upgrading!';
       history.replaceState(null, '', '/');
     } else if (params.get('upgrade_error') === '1') {
       statusEl.textContent = "Something went wrong confirming your upgrade — if you were charged, contact support and we'll sort it out.";
@@ -719,7 +742,7 @@
       "how long": "Usually 2–5 minutes depending on video length. Transcription is typically the longest step.",
       "what videos work": "Best: podcasts, interviews, talks, sermons, lectures. Avoid: music-only, silent footage.",
       "why failed": "Most common: video too short, no clear speech, or unsupported codec. Try a longer video with clearer audio.",
-      "what is pro": "Pro ($15/mo) gives you unlimited clips instead of 5/month, removes the watermark, and unlocks dubbing to Spanish/French/Portuguese.",
+      "what is pro": "Pro ($15/mo) gives you 20 videos/month instead of 5, removes the watermark, and unlocks dubbing to Spanish/French/Portuguese. Pro Plus ($29/mo) bumps that to 50/month.",
       "how download": "Each clip has a download button. Or use 'Download All as ZIP' to get all 3 clips + metadata in one file.",
       "can i edit": "Peakcut auto-cuts and captions. For further editing, download the MP4 and use CapCut, Adobe Premiere, or similar.",
       "refund": "We process refunds within 5–7 business days. Contact support@peakcut.example with your order details.",

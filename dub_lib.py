@@ -17,6 +17,7 @@ language) since only {es,fr,pt} Piper voices are warmed into the Docker
 image. Widening this to more languages later just means warming another
 voice — no code changes needed here.
 """
+import concurrent.futures
 import logging
 import os
 import subprocess
@@ -37,6 +38,21 @@ VOICES_DIR = os.environ.get("PIPER_VOICES_DIR", os.path.join(BASE_DIR, "voices")
 ATEMPO_TIMEOUT = int(os.environ.get("FFMPEG_ATEMPO_TIMEOUT_SECONDS", "60"))
 RENDER_TIMEOUT = pipeline_lib.RENDER_TIMEOUT
 
+# deep-translator's GoogleTranslator calls requests.get() with no `timeout=`
+# at all (checked the installed library source), and it has no parameter to
+# pass one through -- unlike every ffmpeg call above, this is a real
+# outbound request to a third party, so it can hang far longer than a local
+# subprocess if that endpoint stalls. socket.setdefaulttimeout() does NOT
+# fix this -- verified against a socket that accepts but never responds, and
+# requests/urllib3 ignored it and hung regardless. A bounded executor is the
+# only thing that actually works here: we can't kill the underlying blocked
+# thread (Python has no API for that), but future.result(timeout=...) lets
+# the worker give up and move on instead of hanging forever. max_workers > 1
+# so one stuck translate call doesn't also block every later one queued
+# behind it in the pool.
+TRANSLATE_TIMEOUT = int(os.environ.get("TRANSLATE_TIMEOUT_SECONDS", "20"))
+_translate_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="dub-translate")
+
 # name shown to users -> piper voice file (without .onnx)
 DUB_LANGUAGES = {
     "es": {"label": "Spanish", "voice": "es_ES-carlfm-x_low"},
@@ -55,7 +71,13 @@ def get_voice(lang_code: str) -> PiperVoice:
 
 
 def translate_text(text: str, target_lang: str, source_lang: str = "en") -> str:
-    return GoogleTranslator(source=source_lang, target=target_lang).translate(text)
+    future = _translate_executor.submit(
+        lambda: GoogleTranslator(source=source_lang, target=target_lang).translate(text)
+    )
+    try:
+        return future.result(timeout=TRANSLATE_TIMEOUT)
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError(f"Translation request timed out after {TRANSLATE_TIMEOUT}s")
 
 
 def synthesize_speech(text: str, target_lang: str, out_wav_path: str):
@@ -86,7 +108,8 @@ def _atempo_chain(factor: float) -> str:
     return ",".join(filters)
 
 
-def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True):
+def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True,
+                        watermark_text=None, watermark_color=None):
     """Same visual pipeline as pipeline_lib.render_clip (vertical crop,
     burned captions, watermark) but with the audio track replaced by
     translated, synthesized speech time-stretched to fit the clip, and
@@ -141,10 +164,13 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
         "Bold=1,Alignment=2,MarginV=140'"
     )
     if watermark:
-        vf += (
-            f",drawtext=text='{pipeline_lib.WATERMARK}':fontcolor=white@0.6:fontsize=18:"
-            "x=(w-text_w)/2:y=h-70"
-        )
+        # Free plan: always the mandatory watermark, never the custom one.
+        vf += pipeline_lib._watermark_filter(pipeline_lib.WATERMARK, "#FFFFFF", out_dir, rank)
+    elif watermark_text:
+        # Pro Plus opt-in custom watermark — see pipeline_lib.render_clip's
+        # matching branch for why textfile= is used instead of embedding
+        # user-supplied text directly into the filter string.
+        vf += pipeline_lib._watermark_filter(watermark_text, watermark_color, out_dir, rank)
     cmd = [
         "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
         "-i", video_path, "-i", stretched_wav,

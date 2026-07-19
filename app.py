@@ -185,14 +185,29 @@ def save_api_keys(data):
         API_KEYS_FILE.write_text(json.dumps(data, indent=2))
 
 
-def generate_api_key(identity: str, tier: str = "free") -> str:
-    """Generate a new API key for a user. Tier can be 'free', 'pro', or 'pro_plus'."""
+def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = None) -> str | None:
+    """Generate a new API key for a user. Tier can be 'free', 'pro', or
+    'pro_plus'. If max_keys is set, the existing-count check and the insert
+    happen under the same lock so two concurrent requests can't both slip
+    past the cap the way a check-then-act version would; returns None if the
+    cap is already hit."""
     api_key = f"pk_{uuid.uuid4().hex[:32]}"
     with _api_lock:
         data = json.loads(API_KEYS_FILE.read_text())
         if "keys" not in data:
             data["keys"] = {}
+        if max_keys is not None:
+            active_count = sum(
+                1 for info in data["keys"].values()
+                if info.get("identity") == identity and info.get("active")
+            )
+            if active_count >= max_keys:
+                return None
         data["keys"][api_key] = {
+            # A separate, non-secret id for referencing this key from the UI
+            # (revoke button, etc.) without ever having to show the actual
+            # key again — list_api_keys only shows a masked version of that.
+            "key_id": uuid.uuid4().hex[:12],
             "identity": identity,
             "tier": tier,
             "created": time.time(),
@@ -308,6 +323,7 @@ def _worker():
                 job["input_path"], str(job_dir), n_clips=3, watermark=not job["is_pro"],
                 dub_lang=job.get("dub_lang"), clip_format=job.get("clip_format", "vertical"),
                 caption_style=job.get("caption_style", "bold"),
+                watermark_text=job.get("watermark_text"), watermark_color=job.get("watermark_color"),
             )
             if not result["clips"]:
                 raise RuntimeError("no usable clips found")
@@ -491,7 +507,8 @@ def check_ip_rate_limit(ip: str) -> bool:
 @app.post("/process")
 async def process(request: Request, file: UploadFile = File(...), dub_lang: str | None = Form(None),
                    notify_email: str | None = Form(None), clip_format: str = Form("vertical"),
-                   caption_style: str = Form("bold")):
+                   caption_style: str = Form("bold"), watermark_text: str | None = Form(None),
+                   watermark_color: str | None = Form(None)):
     if clip_format not in ("vertical", "square", "horizontal"):
         raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
     if caption_style not in ("bold", "outline", "subtle", "neon"):
@@ -507,6 +524,15 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
     identity = get_identity(request)
     tier = get_account_tier(request)
     is_pro = tier != "free"
+
+    # Custom watermark is a Pro Plus perk (settings.html gates the UI to it
+    # too) -- silently ignored rather than erroring for any other tier, since
+    # a lower-tier account could still have a stale value in localStorage.
+    if tier != "pro_plus":
+        watermark_text = None
+        watermark_color = None
+    elif watermark_text and len(watermark_text) > 40:
+        raise HTTPException(status_code=400, detail="Watermark text is limited to 40 characters.")
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in config.ALLOWED_EXTENSIONS:
@@ -559,7 +585,8 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
 
     _set_job(job_id, status="queued", identity=identity, is_pro=is_pro,
              input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
-             notify_email=notify_email, clip_format=clip_format, caption_style=caption_style)
+             notify_email=notify_email, clip_format=clip_format, caption_style=caption_style,
+             watermark_text=watermark_text, watermark_color=watermark_color)
     try:
         _enqueue_job(job_id, tier)
     except queue.Full:
@@ -798,16 +825,34 @@ async def stripe_webhook(request: Request):
 
 # ── API Endpoints ───────────────────────────────────────────────────────────
 
+MAX_API_KEYS_PER_IDENTITY = 5
+
+
 @app.post("/api/keys")
 def create_api_key(request: Request):
-    """Generate a new API key for the signed-in user. Requires Google Sign-In."""
+    """Generate a new API key for the signed-in user. Requires Google Sign-In.
+    Capped per identity — otherwise nothing stops minting unlimited "free"
+    keys (100 calls/mo each, with no expiry) to route around both the
+    per-key monthly limit and, until the check below was added, the fact
+    that /api/v1/process itself had no IP rate limiting at all."""
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         raise HTTPException(status_code=401, detail="Sign in required to create API keys.")
 
+    # Same reasoning as every other route that computes get_identity() for an
+    # anonymous visitor: without persisting the cid cookie here too, a caller
+    # that reaches this endpoint before any cookie-setting route (e.g. /usage,
+    # which the settings page happens to call first) gets a fresh random
+    # identity on every request -- the key would be created under one cid and
+    # be permanently unlistable/unrevokable under the next.
     identity = get_identity(request)
     tier = get_account_tier(request)
-    api_key = generate_api_key(identity, tier)
-    return {"api_key": api_key, "tier": tier}
+    api_key = generate_api_key(identity, tier, max_keys=MAX_API_KEYS_PER_IDENTITY)
+    if api_key is None:
+        raise HTTPException(status_code=400, detail=f"Limit of {MAX_API_KEYS_PER_IDENTITY} API keys reached. Deactivate an existing key before creating another.")
+    resp = JSONResponse({"api_key": api_key, "tier": tier})
+    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
+                     httponly=True, samesite="lax")
+    return resp
 
 
 @app.get("/api/keys")
@@ -820,21 +865,55 @@ def list_api_keys(request: Request):
     data = load_api_keys()
     user_keys = [
         {
-            "api_key": key[:12] + "***" + key[-4:],  # mask key
+            "key_id": info.get("key_id"),  # used to revoke this key; the real key is never shown again
+            "api_key": key[:12] + "***" + key[-4:],  # masked, display only
             "tier": info["tier"],
             "created": info["created"],
             "usage_this_month": info.get("usage_this_month", 0),
+            "monthly_limit": API_TIER_LIMITS.get(info.get("tier", "free"), API_TIER_LIMITS["free"]),
             "active": info.get("active", True),
         }
         for key, info in data.get("keys", {}).items()
         if info.get("identity") == identity
     ]
-    return {"keys": user_keys}
+    resp = JSONResponse({"keys": user_keys})
+    resp.set_cookie("clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365,
+                     httponly=True, samesite="lax")
+    return resp
+
+
+@app.delete("/api/keys/{key_id}")
+def revoke_api_key(key_id: str, request: Request):
+    """Revoke one of the signed-in user's own API keys — the way out of the
+    MAX_API_KEYS_PER_IDENTITY cap in create_api_key. Looked up by key_id
+    (never the real key, which list_api_keys never re-exposes) and scoped to
+    the caller's own identity so one user can't revoke another's key."""
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        raise HTTPException(status_code=401, detail="Sign in required.")
+
+    identity = get_identity(request)
+    with _api_lock:
+        data = json.loads(API_KEYS_FILE.read_text())
+        for info in data.get("keys", {}).values():
+            if info.get("key_id") == key_id and info.get("identity") == identity:
+                info["active"] = False
+                API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+                return {"revoked": True}
+    raise HTTPException(status_code=404, detail="API key not found.")
 
 
 @app.post("/api/v1/process")
 async def api_process(request: Request, file: UploadFile = File(...), clip_format: str = Form("vertical")):
     """Process a video via API. Requires valid API key in Authorization header."""
+    cleanup_old_jobs()
+
+    # The monthly per-key cap (below) doesn't stop a key from bursting all of
+    # it in a minute and swamping the single-worker queue — same IP-based
+    # throttle /process uses, previously only applied to the web upload path
+    # even though both land on the exact same queue.
+    if not check_ip_rate_limit(get_request_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many uploads from this network — please try again later.")
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header. Use: Authorization: Bearer <api_key>")
@@ -903,23 +982,29 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
 
 @app.get("/api/v1/clips/{job_id}")
 def api_get_clips(job_id: str, request: Request):
-    """Get clip results from a completed job. Requires API key or job cookie."""
+    """Get clip results from a completed job. Requires a valid API key, same
+    as api_docs.html documents ("All requests must include a valid API key")
+    — previously a *missing* Authorization header was let through untouched
+    while an invalid one was correctly rejected, so a caller with no key at
+    all had more access than one with an expired key."""
     auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        api_key = auth_header[7:]
-        key_info = get_api_key_info(api_key)
-        if not key_info or not key_info.get("active"):
-            raise HTTPException(status_code=401, detail="Invalid API key.")
-    else:
-        # Allow access if cookie was set during job submission
-        pass
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header. Use: Authorization: Bearer <api_key>")
+    api_key = auth_header[7:]
+    key_info = get_api_key_info(api_key)
+    if not key_info or not key_info.get("active"):
+        raise HTTPException(status_code=401, detail="Invalid API key.")
 
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     if job["status"] == "processing":
-        return {"status": "processing", "progress": job.get("progress", 0)}
+        # "progress" (a fabricated percentage) was never actually computed
+        # anywhere -- always 0 -- despite api_docs.html showing a fake
+        # example value. elapsed_seconds is real: the web /job/{id} endpoint
+        # already tracks the same started_at for its own elapsed display.
+        return {"status": "processing", "elapsed_seconds": round(time.time() - job.get("started_at", time.time()))}
     elif job["status"] == "failed":
         return {"status": "error", "error": job.get("error", "Unknown error")}
     elif job["status"] == "done":

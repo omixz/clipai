@@ -170,7 +170,32 @@ def build_word_chunk_srt(words, clip_start, chunk_size=4, clean_fillers=True):
     return "\n".join(lines)
 
 
-def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="vertical", caption_style="bold"):
+WATERMARK_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _watermark_filter(text, color, out_dir, rank):
+    """Builds the drawtext filter fragment for a watermark. Writes `text` to
+    a file and references it via drawtext's textfile= option rather than
+    interpolating it into the filter string with text='...' -- `text` can be
+    arbitrary user input (the Pro Plus custom watermark), and ffmpeg's
+    filtergraph syntax treats ':', ',', '\\' and "'" as structural, so
+    embedding it inline would let watermark text break out of the filter or
+    inject additional filter directives. A textfile's *contents* are just
+    read as bytes, sidestepping that whole class of injection. Only `color`
+    still gets validated + inlined, since it's parsed as a color name/hex.
+    Returns "" if text is empty after sanitizing."""
+    clean_text = " ".join(text.split())[:40] if text else ""
+    if not clean_text:
+        return ""
+    text_path = os.path.join(out_dir, f"peakcut_rank{rank}_wm.txt")
+    with open(text_path, "w") as f:
+        f.write(clean_text)
+    ffmpeg_color = f"0x{color[1:]}" if color and WATERMARK_COLOR_RE.match(color) else "white"
+    return f",drawtext=textfile={text_path}:fontcolor={ffmpeg_color}@0.6:fontsize=18:x=(w-text_w)/2:y=h-70"
+
+
+def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="vertical", caption_style="bold",
+                 watermark_text=None, watermark_color=None):
     srt_text = build_word_chunk_srt(seg["words"], seg["start"])
     virality = seg.get("virality_score", 0)
     srt_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.srt")
@@ -200,10 +225,13 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
         f"subtitles={srt_path}:force_style='{caption_style_str}'"
     )
     if watermark:
-        vf += (
-            f",drawtext=text='{WATERMARK}':fontcolor=white@0.6:fontsize=18:"
-            "x=(w-text_w)/2:y=h-70"
-        )
+        # Free plan: always the mandatory watermark, never the custom one.
+        vf += _watermark_filter(WATERMARK, "#FFFFFF", out_dir, rank)
+    elif watermark_text:
+        # Pro Plus opt-in custom watermark. Pro/Pro Plus are otherwise
+        # watermark-free by default (see caller) -- this only fires if the
+        # user explicitly set one in Settings.
+        vf += _watermark_filter(watermark_text, watermark_color, out_dir, rank)
     cmd = [
         "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
         "-i", video_path, "-vf", vf,
@@ -217,7 +245,8 @@ def render_clip(video_path, seg, out_dir, rank, watermark=True, clip_format="ver
     return out_path, result.returncode == 0, result.stderr[-800:]
 
 
-def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None, clip_format="vertical", caption_style="bold"):
+def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None, clip_format="vertical", caption_style="bold",
+                   watermark_text=None, watermark_color=None):
     os.makedirs(out_dir, exist_ok=True)
 
     # Bound worst-case time on the single-worker queue before Whisper (which
@@ -248,11 +277,13 @@ def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None,
         if dub_lang:
             import dub_lib
             out_path, translated_text, ok, err = dub_lib.render_dubbed_clip(
-                video_path, seg, out_dir, i, dub_lang, source_lang=source_lang, watermark=watermark
+                video_path, seg, out_dir, i, dub_lang, source_lang=source_lang, watermark=watermark,
+                watermark_text=watermark_text, watermark_color=watermark_color,
             )
             text = translated_text
         else:
-            out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark, clip_format=clip_format, caption_style=caption_style)
+            out_path, ok, err = render_clip(video_path, seg, out_dir, i, watermark=watermark, clip_format=clip_format,
+                                             caption_style=caption_style, watermark_text=watermark_text, watermark_color=watermark_color)
             text = seg["text"]
         manifest.append({
             "rank": i, "start": seg["start"], "end": seg["end"],
