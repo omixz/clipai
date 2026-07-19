@@ -18,7 +18,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 import stripe
 from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
 from fastapi.responses import (
-    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse,
+    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse,
 )
 
 import auth
@@ -490,17 +490,17 @@ def cleanup_old_jobs():
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (BASE_DIR / "index.html").read_text()
+    return (BASE_DIR / "index.html").read_text().replace("__SITE_URL__", config.SITE_URL)
 
 
 @app.get("/pricing", response_class=HTMLResponse)
 def pricing():
-    return (BASE_DIR / "pricing.html").read_text()
+    return (BASE_DIR / "pricing.html").read_text().replace("__SITE_URL__", config.SITE_URL)
 
 
 @app.get("/api/docs", response_class=HTMLResponse)
 def api_docs():
-    return (BASE_DIR / "api_docs.html").read_text()
+    return (BASE_DIR / "api_docs.html").read_text().replace("__SITE_URL__", config.SITE_URL)
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -512,12 +512,12 @@ def settings(request: Request):
 
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy():
-    return (BASE_DIR / "privacy.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+    return (BASE_DIR / "privacy.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL).replace("__SITE_URL__", config.SITE_URL)
 
 
 @app.get("/terms", response_class=HTMLResponse)
 def terms():
-    return (BASE_DIR / "terms.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+    return (BASE_DIR / "terms.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL).replace("__SITE_URL__", config.SITE_URL)
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
@@ -527,7 +527,30 @@ def healthz():
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
-    return "User-agent: *\nAllow: /\nDisallow: /jobs/\n"
+    return (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /jobs/\n"
+        "Disallow: /settings\n"
+        "Disallow: /api/\n"
+        # /api/docs is the one /api/... route actually meant to be indexed
+        # (it's in the sitemap) -- carved back out of the broad disallow
+        # above rather than making that disallow narrower and risking
+        # missing some other /api/... path that shouldn't be crawled.
+        "Allow: /api/docs\n"
+        f"Sitemap: {config.SITE_URL}/sitemap.xml\n"
+    )
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    # Every real, indexable, publicly-crawlable page -- not /settings (private/
+    # authenticated, already noindex'd) and not /jobs/... or /api/... (already
+    # disallowed above; no SEO value and the job ones are ephemeral anyway).
+    pages = ["", "/pricing", "/api/docs", "/privacy", "/terms"]
+    urls = "".join(f"<url><loc>{config.SITE_URL}{p}</loc></url>" for p in pages)
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
+    return Response(content=xml, media_type="application/xml")
 
 
 @app.get("/api/backgrounds")

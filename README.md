@@ -36,6 +36,29 @@ first real request isn't stuck downloading a ~250MB model.
 4. `pick_top_n()` selects the top 3 non-overlapping segments.
 5. `render_clip()` cuts each segment, converts to vertical 1080x1920, burns in short punchy word-chunk captions (timed to actual speech via Whisper's word-level timestamps) plus a watermark (free plan only).
 
+## SEO / launch readiness
+
+- Every public page's `<title>`/description/Open Graph/Twitter Card tags and
+  `<link rel="canonical">` are templated with `__SITE_URL__`, substituted
+  server-side from `config.SITE_URL` when the page is served (`app.py`) —
+  this used to be a hardcoded stale Render URL baked into `index.html`'s
+  JSON-LD structured data, which would actively confuse search engines about
+  the real canonical URL once deployed anywhere else. `/settings` is
+  deliberately `noindex, nofollow` (private, authenticated, no SEO value)
+  and isn't in the sitemap.
+- `GET /sitemap.xml` lists every real indexable page; `GET /robots.txt`
+  points crawlers at it and disallows `/jobs/` (ephemeral, no SEO value),
+  `/settings`, and `/api/...` except `/api/docs` specifically (the one
+  `/api/...` route actually meant to be crawled).
+- **`assets/og-image.png` is referenced by every page's `og:image`/
+  `twitter:image` tags but not included** — same reasoning as the
+  split-screen background videos: can't fabricate a real branded image from
+  this sandbox. Until it's added, link previews on Twitter/Discord/Slack/
+  iMessage etc. will show no image (not a broken one — platforms handle a
+  missing og:image gracefully, just with a plainer-looking preview). Add a
+  1200×630 PNG or JPG there — a screenshot of the app in action, or a
+  branded card with the Peakcut logo/name, works well for this format.
+
 ## Split-screen backgrounds (Pro/Pro Plus)
 
 The "Subway Surfers"-style format — the talking clip on top, a looping
