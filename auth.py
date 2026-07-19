@@ -24,6 +24,26 @@ _discovery_cache = {"data": None, "at": 0.0}
 _jwks_client = None
 _serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-account-v1")
 
+# SESSION_SECRET_KEY signs both this cookie and the Stripe customer cookie
+# below -- if a deployer sets up Google Sign-In or Stripe but forgets to also
+# set this one (plausible: it's not required for the OAuth handshake to look
+# like it works end-to-end), it silently stays at this hardcoded default,
+# which is visible in this public repo. Anyone who's read the source could
+# then forge a validly-"signed" cookie claiming to be any user or any Stripe
+# customer -- full account takeover / free Pro access for the taking, and
+# nothing about a working-looking sign-in flow would reveal it. Rather than
+# just warn and hope someone reads the logs, read_account_cookie and
+# read_customer_cookie both refuse to trust ANY cookie while this is true --
+# sign-in and billing degrade to "doesn't work" instead of "is forgeable",
+# which is a failure a deployer will actually notice while testing.
+SESSION_SECRET_IS_DEFAULT = config.SESSION_SECRET_KEY == "dev-only-insecure-secret-REPLACE_ME"
+if SESSION_SECRET_IS_DEFAULT:
+    log.warning(
+        "SESSION_SECRET_KEY is still the default placeholder -- signed cookies "
+        "(Google sign-in, Stripe customer/Pro status) will be refused entirely "
+        "until a real secret is set. Set SESSION_SECRET_KEY (openssl rand -hex 32)."
+    )
+
 
 def _discovery():
     global _discovery_cache
@@ -88,7 +108,7 @@ def sign_account_cookie(sub: str, email: str) -> str:
 
 
 def read_account_cookie(token: str) -> dict | None:
-    if not token:
+    if not token or SESSION_SECRET_IS_DEFAULT:
         return None
     try:
         return _serializer.loads(token, max_age=ACCOUNT_MAX_AGE)
@@ -119,7 +139,7 @@ def sign_customer_cookie(customer_id: str) -> str:
 
 
 def read_customer_cookie(token: str) -> str | None:
-    if not token:
+    if not token or SESSION_SECRET_IS_DEFAULT:
         return None
     try:
         return _customer_serializer.loads(token, max_age=CUSTOMER_MAX_AGE)["customer_id"]

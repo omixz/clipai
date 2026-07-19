@@ -1,6 +1,7 @@
 import itertools
 import json
 import logging
+import os
 import queue
 import re
 import secrets
@@ -37,11 +38,28 @@ JOBS_DIR = BASE_DIR / "jobs"
 USAGE_FILE = JOBS_DIR / "usage.json"
 API_KEYS_FILE = JOBS_DIR / "api_keys.json"
 
+
+def _atomic_write_text(path: Path, text: str):
+    """Path.write_text() truncates the file and then writes -- not atomic.
+    This app can genuinely OOM under Whisper/ffmpeg's peak memory use (a
+    documented, real risk, not hypothetical), and usage.json gets written on
+    every single video processed -- a crash landing mid-write leaves a
+    truncated file whose next json.loads() raises uncaught, 500ing every
+    route that touches usage/API-key tracking until someone manually repairs
+    the file on the server. Writing to a temp file in the same directory
+    then os.replace()-ing over the target is atomic on POSIX (same
+    filesystem): a crash mid-write leaves the temp file corrupt but the real
+    file completely untouched."""
+    tmp_path = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    tmp_path.write_text(text)
+    os.replace(tmp_path, path)
+
+
 JOBS_DIR.mkdir(exist_ok=True)
 if not USAGE_FILE.exists():
-    USAGE_FILE.write_text("{}")
+    _atomic_write_text(USAGE_FILE, "{}")
 if not API_KEYS_FILE.exists():
-    API_KEYS_FILE.write_text("{}")
+    _atomic_write_text(API_KEYS_FILE, "{}")
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 
@@ -83,11 +101,11 @@ def reserve_use(key, limit) -> bool:
         rec = _period_rec(data, key)
         if rec["used"] >= limit:
             data[key] = rec  # persist a rolled-over period even on rejection
-            USAGE_FILE.write_text(json.dumps(data))
+            _atomic_write_text(USAGE_FILE, json.dumps(data))
             return False
         rec["used"] += 1
         data[key] = rec
-        USAGE_FILE.write_text(json.dumps(data))
+        _atomic_write_text(USAGE_FILE, json.dumps(data))
         return True
 
 
@@ -97,7 +115,7 @@ def refund_use(key):
         rec = _period_rec(data, key)
         rec["used"] = max(0, rec["used"] - 1)
         data[key] = rec
-        USAGE_FILE.write_text(json.dumps(data))
+        _atomic_write_text(USAGE_FILE, json.dumps(data))
 
 
 def peek_usage(key) -> int:
@@ -195,7 +213,7 @@ def load_api_keys():
 
 def save_api_keys(data):
     with _api_lock:
-        API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+        _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
 
 
 def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = None) -> str | None:
@@ -228,7 +246,7 @@ def generate_api_key(identity: str, tier: str = "free", max_keys: int | None = N
             "usage_this_month": 0,
             "active": True,
         }
-        API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+        _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
     return api_key
 
 
@@ -259,11 +277,11 @@ def increment_api_usage(api_key: str) -> bool:
 
         monthly_limit = API_TIER_LIMITS.get(key_data.get("tier", "free"), API_TIER_LIMITS["free"])
         if key_data["usage_this_month"] >= monthly_limit:
-            API_KEYS_FILE.write_text(json.dumps(data, indent=2))  # persist rollover even on rejection
+            _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))  # persist rollover even on rejection
             return False
 
         key_data["usage_this_month"] += 1
-        API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+        _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
     return True
 
 
@@ -581,7 +599,13 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         )
         raise HTTPException(status_code=402, detail=f"{plan_name} plan limit reached ({limit} videos/month). {upsell}")
 
-    job_id = str(uuid.uuid4())[:8]
+    # Full UUID4 hex (128 bits), not a truncated slice -- job_id is the ONLY
+    # thing gating unauthenticated access to a user's uploaded clips via
+    # /job/{id}, /jobs/{id}/{filename}, and /jobs/{id}/download/all (none of
+    # which check ownership or rate-limit reads). An 8-hex-char id (32 bits,
+    # ~4.3B combinations) is brute-forceable in hours at a few hundred
+    # requests/sec against those cheap lookup endpoints; 128 bits isn't.
+    job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     input_path = job_dir / f"input{ext}"
@@ -643,11 +667,45 @@ def job_status(job_id: str):
     return out
 
 
+# Every job_id this app generates is uuid.uuid4().hex -- exactly this shape.
+# Validating the request path parameter against it up front means job_id can
+# never be crafted to reference a sibling file that happens to live directly
+# in JOBS_DIR (usage.json, api_keys.json -- the latter holds every live API
+# key in plaintext) via something like job_id="x", filename="../api_keys.json".
+# A pure containment check alone doesn't catch that: it resolves to
+# JOBS_DIR/api_keys.json, which genuinely IS "inside JOBS_DIR", just not
+# inside that specific job's own subdirectory -- caught in review by testing
+# the fix against exactly this case, not something the naive version handled.
+_JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _job_dir_path(job_id: str) -> Path:
+    if not _JOB_ID_RE.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID.")
+    return JOBS_DIR / job_id
+
+
+def _safe_job_path(job_id: str, *parts: str) -> Path:
+    """Resolves this job's own subdirectory joined with `parts` and verifies
+    the result is contained within THAT subdirectory specifically (not just
+    somewhere generically inside JOBS_DIR) -- see _job_dir_path's docstring
+    for why the distinction matters. This is a positive containment check
+    (resolve + is_relative_to) rather than a blocklist of specific traversal
+    substrings like "/" or ".." -- a blocklist has to correctly anticipate
+    every bypass technique, while this can't be bypassed by anything that
+    isn't literally still inside the directory once resolved, including e.g.
+    an absolute path segment (which pathlib's / operator would otherwise let
+    silently discard everything joined before it)."""
+    job_dir = _job_dir_path(job_id).resolve()
+    candidate = job_dir.joinpath(*parts).resolve()
+    if not candidate.is_relative_to(job_dir):
+        raise HTTPException(status_code=400, detail="Invalid path.")
+    return candidate
+
+
 @app.get("/jobs/{job_id}/{filename}")
 def get_clip(job_id: str, filename: str):
-    if "/" in job_id or "/" in filename or ".." in job_id or ".." in filename:
-        raise HTTPException(status_code=400, detail="Invalid path.")
-    path = JOBS_DIR / job_id / filename
+    path = _safe_job_path(job_id, filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Not found.")
     return FileResponse(str(path))
@@ -655,9 +713,7 @@ def get_clip(job_id: str, filename: str):
 
 @app.get("/jobs/{job_id}/download/all")
 def download_all_clips(job_id: str):
-    if "/" in job_id or ".." in job_id:
-        raise HTTPException(status_code=400, detail="Invalid job ID.")
-    job_dir = JOBS_DIR / job_id
+    job_dir = _safe_job_path(job_id)
     if not job_dir.exists():
         raise HTTPException(status_code=404, detail="Job not found.")
 
@@ -917,7 +973,7 @@ def revoke_api_key(key_id: str, request: Request):
         for info in data.get("keys", {}).values():
             if info.get("key_id") == key_id and info.get("identity") == identity:
                 info["active"] = False
-                API_KEYS_FILE.write_text(json.dumps(data, indent=2))
+                _atomic_write_text(API_KEYS_FILE, json.dumps(data, indent=2))
                 return {"revoked": True}
     raise HTTPException(status_code=404, detail="API key not found.")
 
@@ -960,7 +1016,13 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
     if _job_queue.full():
         raise HTTPException(status_code=503, detail="Server queue full, please try again shortly.")
 
-    job_id = str(uuid.uuid4())[:8]
+    # Full UUID4 hex (128 bits), not a truncated slice -- job_id is the ONLY
+    # thing gating unauthenticated access to a user's uploaded clips via
+    # /job/{id}, /jobs/{id}/{filename}, and /jobs/{id}/download/all (none of
+    # which check ownership or rate-limit reads). An 8-hex-char id (32 bits,
+    # ~4.3B combinations) is brute-forceable in hours at a few hundred
+    # requests/sec against those cheap lookup endpoints; 128 bits isn't.
+    job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     # Name from our own extension, never the client-supplied filename directly

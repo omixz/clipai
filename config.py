@@ -12,8 +12,13 @@
 #    Web application). Add {SITE_URL}/auth/google/callback as an authorized
 #    redirect URI. Paste the client ID + secret below. Also set
 #    SESSION_SECRET_KEY to a long random string (e.g. `openssl rand -hex 32`)
-#    — it signs the account cookie, so losing it invalidates every signed-in
-#    session, and anyone who has it could forge one.
+#    — it signs both the account cookie AND the Stripe customer cookie, so
+#    losing it invalidates every signed-in session and every logged-in Pro
+#    subscriber's access. This one is NOT optional the moment either Google
+#    Sign-In or Stripe is configured: leaving it at the placeholder default
+#    doesn't fail open, but auth.py deliberately refuses to trust ANY signed
+#    cookie while it's unset, so sign-in and Pro status will look completely
+#    broken (never signed in, never Pro) until you set a real value.
 #    Sign-in is a soft requirement: while GOOGLE_CLIENT_ID is still the
 #    placeholder below, the site keeps working exactly as it does now
 #    (anonymous, cookie-tracked, 1 free video). The moment you fill in real
