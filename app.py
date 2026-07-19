@@ -27,6 +27,7 @@ import auth
 import backgrounds
 import billing_lib
 import config
+import crypto_lib
 import email_lib
 import pipeline_lib
 
@@ -58,6 +59,10 @@ PAYPAL_SUBS_FILE = JOBS_DIR / "paypal_subscriptions.json"
 # account (see get_account_tier), so it can't be spoofed by an anonymous
 # cookie claiming someone else's email.
 MANUAL_GRANTS_FILE = JOBS_DIR / "manual_grants.json"
+# order_id -> {email, tier}, recorded the moment a NOWPayments invoice is
+# created so the IPN webhook (which only carries order_id back, not the
+# customer's identity) has something to look the payment up against.
+CRYPTO_PENDING_FILE = JOBS_DIR / "crypto_pending.json"
 
 
 def _atomic_write_text(path: Path, text: str):
@@ -85,9 +90,31 @@ if not PAYPAL_SUBS_FILE.exists():
     _atomic_write_text(PAYPAL_SUBS_FILE, "{}")
 if not MANUAL_GRANTS_FILE.exists():
     _atomic_write_text(MANUAL_GRANTS_FILE, "{}")
+if not CRYPTO_PENDING_FILE.exists():
+    _atomic_write_text(CRYPTO_PENDING_FILE, "{}")
 
 _paypal_subs_lock = threading.Lock()
 _manual_grants_lock = threading.Lock()
+_crypto_pending_lock = threading.Lock()
+
+
+def record_crypto_pending(order_id: str, email: str, tier: str):
+    with _crypto_pending_lock:
+        data = json.loads(CRYPTO_PENDING_FILE.read_text())
+        data[order_id] = {"email": email, "tier": tier}
+        _atomic_write_text(CRYPTO_PENDING_FILE, json.dumps(data, indent=2))
+
+
+def pop_crypto_pending(order_id: str) -> dict | None:
+    """Removes and returns the pending entry -- pop rather than peek so a
+    replayed/duplicate IPN for the same order_id can't re-grant off a stale
+    entry (the second delivery just finds nothing and no-ops)."""
+    with _crypto_pending_lock:
+        data = json.loads(CRYPTO_PENDING_FILE.read_text())
+        entry = data.pop(order_id, None)
+        if entry is not None:
+            _atomic_write_text(CRYPTO_PENDING_FILE, json.dumps(data, indent=2))
+        return entry
 
 
 def load_paypal_subs() -> dict:
@@ -107,10 +134,16 @@ def load_manual_grants() -> dict:
         return json.loads(MANUAL_GRANTS_FILE.read_text())
 
 
-def set_manual_grant(email: str, tier: str):
+def set_manual_grant(email: str, tier: str, source: str = "manual"):
+    """source is 'manual' (an admin typed this in after a bank transfer) or
+    'crypto' (auto-granted by the NOWPayments webhook) -- stored so
+    get_account_tier_and_source and the admin/settings UI can tell a
+    human-reviewed grant apart from an automated one, without changing how
+    either is trusted (both are equally trusted; this is purely
+    informational)."""
     with _manual_grants_lock:
         data = json.loads(MANUAL_GRANTS_FILE.read_text())
-        data[email.lower()] = tier
+        data[email.lower()] = {"tier": tier, "source": source}
         _atomic_write_text(MANUAL_GRANTS_FILE, json.dumps(data, indent=2))
 
 
@@ -293,8 +326,8 @@ def get_account_tier_and_source(request: Request) -> tuple[str, str | None]:
 
     if account:
         granted = load_manual_grants().get(account.get("email", "").lower())
-        if granted in ("pro", "pro_plus"):
-            return granted, "manual"
+        if granted and granted.get("tier") in ("pro", "pro_plus"):
+            return granted["tier"], granted.get("source", "manual")
 
     identity = get_identity(request)
     subscription_id = load_paypal_subs().get(identity)
@@ -1075,8 +1108,61 @@ def _start_paypal_checkout(request: Request, plan_id: str):
     return resp
 
 
-def _checkout(request: Request, tier: str, plan_id: str):
+def _start_crypto_checkout(request: Request, email: str, tier: str):
+    order_id = uuid.uuid4().hex
+    # Recorded before the API call, not after -- an invoice NOWPayments
+    # never hears back about (customer abandons it) just leaves a harmless
+    # orphaned pending entry; recording it only on success would instead
+    # risk the opposite: an invoice a customer actually pays racing ahead
+    # of us persisting where to credit it.
+    record_crypto_pending(order_id, email, tier)
+    try:
+        invoice_url = crypto_lib.create_invoice(
+            float(_TIER_PRICES[tier].lstrip("$")), order_id, f"Peakcut {_TIER_LABELS[tier]}",
+            ipn_callback_url=f"{config.SITE_URL}/crypto/webhook",
+            success_url=f"{config.SITE_URL}/?upgrade_pending=1",
+            cancel_url=f"{config.SITE_URL}/",
+        )
+    except Exception:
+        log.exception("nowpayments invoice creation failed")
+        raise HTTPException(status_code=500, detail="Couldn't start crypto checkout — try again shortly.")
+
+    resp = RedirectResponse(invoice_url, status_code=303)
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
+    return resp
+
+
+def _checkout_methods() -> list[str]:
+    methods = []
     if config.BANK_PAYMENT_CONFIGURED:
+        methods.append("bank")
+    if config.NOWPAYMENTS_CONFIGURED:
+        methods.append("crypto")
+    if config.PAYPAL_CONFIGURED:
+        methods.append("paypal")
+    return methods
+
+
+def _render_choose_payment_page(tier: str) -> str:
+    html = (BASE_DIR / "choose_payment.html").read_text()
+    options = []
+    if config.BANK_PAYMENT_CONFIGURED:
+        options.append('<a class="option" href="?method=bank"><strong>Bank transfer</strong><span>Manual activation, can take a few hours</span></a>')
+    if config.NOWPAYMENTS_CONFIGURED:
+        options.append('<a class="option" href="?method=crypto"><strong>Crypto</strong><span>Automatic activation once your payment confirms</span></a>')
+    if config.PAYPAL_CONFIGURED:
+        options.append('<a class="option" href="?method=paypal"><strong>PayPal</strong><span>Card or PayPal balance, recurring subscription</span></a>')
+    return (
+        html
+        .replace("__SITE_URL__", config.SITE_URL)
+        .replace("__TIER_LABEL__", _TIER_LABELS[tier])
+        .replace("__PRICE__", _TIER_PRICES[tier])
+        .replace("__OPTIONS__", "".join(options))
+    )
+
+
+def _checkout_via(method: str, request: Request, tier: str, plan_id: str):
+    if method == "bank" and config.BANK_PAYMENT_CONFIGURED:
         # The reference code is keyed by email, so an account is required
         # for this path regardless of GOOGLE_SIGNIN_CONFIGURED's normal
         # soft-requirement (there's no anonymous equivalent that a human
@@ -1085,20 +1171,42 @@ def _checkout(request: Request, tier: str, plan_id: str):
         if not account:
             return RedirectResponse("/auth/google/login", status_code=303)
         return HTMLResponse(_render_bank_transfer_page(account["email"], tier))
+    if method == "crypto" and config.NOWPAYMENTS_CONFIGURED:
+        account = get_account(request)
+        if not account:
+            return RedirectResponse("/auth/google/login", status_code=303)
+        return _start_crypto_checkout(request, account["email"], tier)
+    if method == "paypal" and config.PAYPAL_CONFIGURED:
+        if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+            return RedirectResponse("/auth/google/login", status_code=303)
+        return _start_paypal_checkout(request, plan_id)
+    raise HTTPException(status_code=400, detail="Unknown or unavailable payment method.")
+
+
+def _checkout(request: Request, tier: str, plan_id: str, method: str | None):
+    methods = _checkout_methods()
+    if not methods:
+        raise HTTPException(status_code=503, detail="Billing isn't configured yet.")
+    if method:
+        return _checkout_via(method, request, tier, plan_id)
+    if len(methods) == 1:
+        return _checkout_via(methods[0], request, tier, plan_id)
+    # More than one way to pay -- let the customer choose rather than
+    # silently picking one for them.
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         return RedirectResponse("/auth/google/login", status_code=303)
-    return _start_paypal_checkout(request, plan_id)
+    return HTMLResponse(_render_choose_payment_page(tier))
 
 
 @app.get("/create-checkout-session")
-def create_checkout_session(request: Request):
-    return _checkout(request, "pro", config.PAYPAL_PLAN_ID_PRO)
+def create_checkout_session(request: Request, method: str | None = None):
+    return _checkout(request, "pro", config.PAYPAL_PLAN_ID_PRO, method)
 
 
 @app.get("/create-checkout-session-plus")
-def create_checkout_session_plus(request: Request):
+def create_checkout_session_plus(request: Request, method: str | None = None):
     """Checkout for Pro Plus tier."""
-    return _checkout(request, "pro_plus", config.PAYPAL_PLAN_ID_PLUS)
+    return _checkout(request, "pro_plus", config.PAYPAL_PLAN_ID_PLUS, method)
 
 
 @app.get("/billing-portal")
@@ -1159,19 +1267,46 @@ async def paypal_webhook(request: Request):
     return {"received": True}
 
 
+# ── Crypto (NOWPayments) billing ─────────────────────────────────────────────
+
+@app.post("/crypto/webhook")
+async def crypto_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("x-nowpayments-sig", "")
+    try:
+        parsed = json.loads(payload)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload.")
+    if not crypto_lib.verify_ipn_signature(parsed, sig_header):
+        raise HTTPException(status_code=400, detail="Invalid webhook signature.")
+
+    if parsed.get("payment_status") in crypto_lib.PAID_STATUSES:
+        order_id = str(parsed.get("order_id", ""))
+        # pop, not peek -- a replayed/duplicate IPN for the same order_id
+        # finds nothing the second time and no-ops instead of re-granting.
+        entry = pop_crypto_pending(order_id)
+        if entry:
+            set_manual_grant(entry["email"], entry["tier"], source="crypto")
+            log.info("crypto payment confirmed for order %s, granted %s to %s",
+                      order_id, entry["tier"], entry["email"])
+
+    return {"received": True}
+
+
 # ── Admin: manual billing grants (direct bank transfer path) ────────────────
 
 def _render_admin_billing_page() -> str:
     grants = load_manual_grants()
     if grants:
         rows = "".join(
-            f'<tr><td>{escape(email)}</td><td class="tier-{escape(tier)}">{escape(_TIER_LABELS.get(tier, tier))}</td>'
+            f'<tr><td>{escape(email)}</td><td class="tier-{escape(g.get("tier", ""))}">{escape(_TIER_LABELS.get(g.get("tier"), g.get("tier", "")))}</td>'
+            f'<td>{escape(g.get("source", "manual"))}</td>'
             f'<td><form class="inline" method="post" action="/admin/billing/revoke">'
             f'<input type="hidden" name="email" value="{escape(email)}">'
             f'<button class="revoke" type="submit">Revoke</button></form></td></tr>'
-            for email, tier in sorted(grants.items())
+            for email, g in sorted(grants.items())
         )
-        table = f"<table><tr><th>Email</th><th>Tier</th><th></th></tr>{rows}</table>"
+        table = f"<table><tr><th>Email</th><th>Tier</th><th>Source</th><th></th></tr>{rows}</table>"
     else:
         table = '<p class="empty">No manual grants yet.</p>'
     return (BASE_DIR / "admin_billing.html").read_text().replace("__GRANTS_TABLE__", table)

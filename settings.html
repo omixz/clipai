@@ -205,6 +205,9 @@
         } else if (data.billing_source === 'manual') {
           billingInfoEl.textContent = 'Billed via direct bank transfer. To cancel or change plans, contact support.';
           billingBtn.style.display = 'none';
+        } else if (data.billing_source === 'crypto') {
+          billingInfoEl.textContent = "Paid via crypto — this doesn't auto-renew; pay again next month to keep your plan active.";
+          billingBtn.style.display = 'none';
         } else if (data.billing_source === 'admin') {
           billingInfoEl.textContent = 'Free Pro Plus access (admin account) — nothing to manage.';
           billingBtn.style.display = 'none';

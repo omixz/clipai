@@ -66,6 +66,15 @@ BANK_BSB = os.environ.get("BANK_BSB", "")
 BANK_PAYID = os.environ.get("BANK_PAYID", "")  # optional -- PayID/Osko transfers settle near-instantly via Australia's NPP, unlike a standard transfer
 BANK_PAYMENT_CONFIGURED = bool(BANK_ACCOUNT_NUMBER and BANK_BSB)
 
+# NOWPayments (crypto) -- the other no-ID-verification path, alongside bank
+# transfer. Unlike bank transfer, NOWPayments gives a real webhook, so this
+# one can auto-grant Pro instead of needing an admin to notice and click
+# Grant. Sign up at nowpayments.io (just an email, no ID) for the API key;
+# the IPN secret is under Store Settings once a payout wallet is added.
+NOWPAYMENTS_API_KEY = os.environ.get("NOWPAYMENTS_API_KEY", "")
+NOWPAYMENTS_IPN_SECRET = os.environ.get("NOWPAYMENTS_IPN_SECRET", "")
+NOWPAYMENTS_CONFIGURED = bool(NOWPAYMENTS_API_KEY and NOWPAYMENTS_IPN_SECRET)
+
 ADSENSE_PUBLISHER_ID = os.environ.get("ADSENSE_PUBLISHER_ID", "ca-pub-5158161193547085")
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "REPLACE_ME.apps.googleusercontent.com")
