@@ -637,24 +637,36 @@ def cleanup_old_jobs():
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (BASE_DIR / "index.html").read_text().replace("__SITE_URL__", config.SITE_URL)
+    return (
+        (BASE_DIR / "index.html").read_text()
+        .replace("__SITE_URL__", config.SITE_URL)
+        .replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+    )
 
 
 @app.get("/pricing", response_class=HTMLResponse)
 def pricing():
-    return (BASE_DIR / "pricing.html").read_text().replace("__SITE_URL__", config.SITE_URL)
+    return (
+        (BASE_DIR / "pricing.html").read_text()
+        .replace("__SITE_URL__", config.SITE_URL)
+        .replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+    )
 
 
 @app.get("/api/docs", response_class=HTMLResponse)
 def api_docs():
-    return (BASE_DIR / "api_docs.html").read_text().replace("__SITE_URL__", config.SITE_URL)
+    return (
+        (BASE_DIR / "api_docs.html").read_text()
+        .replace("__SITE_URL__", config.SITE_URL)
+        .replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings(request: Request):
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         return RedirectResponse("/auth/google/login", status_code=303)
-    return (BASE_DIR / "settings.html").read_text()
+    return (BASE_DIR / "settings.html").read_text().replace("__CONTACT_EMAIL__", config.CONTACT_EMAIL)
 
 
 @app.get("/privacy", response_class=HTMLResponse)

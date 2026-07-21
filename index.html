@@ -922,8 +922,8 @@
       "what is pro": "Pro ($15/mo) gives you 20 videos/month instead of 5, removes the watermark, unlocks dubbing to Spanish/French/Portuguese, and split-screen backgrounds. Pro Plus ($29/mo) bumps that to 50/month.",
       "how download": "Each clip has a download button. Or use 'Download All as ZIP' to get all 3 clips + metadata in one file.",
       "can i edit": "Peakcut auto-cuts and captions. For further editing, download the MP4 and use CapCut, Adobe Premiere, or similar.",
-      "refund": "We process refunds within 5–7 business days. Contact support@peakcut.example with your order details.",
-      "delete account": "Email support@peakcut.example and we'll delete your data within 24 hours.",
+      "refund": "We process refunds within 5–7 business days. Contact __CONTACT_EMAIL__ with your order details.",
+      "delete account": "Email __CONTACT_EMAIL__ and we'll delete your data within 24 hours.",
     };
 
     function initChatbot() {
@@ -986,7 +986,7 @@
           }
         }
         if (!found) {
-          setTimeout(() => addMessage("I'm not sure about that. Try emailing support@peakcut.example for help, or check the FAQ above.", 'bot'), 300);
+          setTimeout(() => addMessage("I'm not sure about that. Try emailing __CONTACT_EMAIL__ for help, or check the FAQ above.", 'bot'), 300);
         }
       });
       input.addEventListener('keypress', (e) => {
