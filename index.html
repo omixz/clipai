@@ -1,30 +1,47 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+  // Runs before first paint so there's no light-mode flash for a
+  // dark-mode user -- stored preference wins, then system preference,
+  // then light. Kept as a standalone inline script (not deferred to the
+  // main <script> block near the end of <body>) specifically to run this
+  // early.
+  (function () {
+    var saved = localStorage.getItem('peakcut-theme');
+    var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  })();
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Peakcut — Free AI Video Clipper: Turn Long Videos Into Short Clips</title>
 <meta name="description" content="Upload a video and get the best moments back as vertical, auto-captioned short clips for TikTok, Reels and Shorts. Free to try, no editing skills needed." />
+<link rel="canonical" href="__SITE_URL__/" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
 <meta property="og:type" content="website" />
+<meta property="og:url" content="__SITE_URL__/" />
 <meta property="og:title" content="Peakcut — Free AI Video Clipper" />
 <meta property="og:description" content="Turn long videos into short, captioned, ready-to-post clips automatically. Free to try." />
-<meta name="twitter:card" content="summary" />
+<meta property="og:image" content="__SITE_URL__/assets/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Peakcut — Free AI Video Clipper" />
 <meta name="twitter:description" content="Turn long videos into short, captioned, ready-to-post clips automatically. Free to try." />
+<meta name="twitter:image" content="__SITE_URL__/assets/og-image.png" />
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5158161193547085" crossorigin="anonymous"></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Peakcut",
-  "url": "https://clipai-tgnv.onrender.com/",
+  "url": "__SITE_URL__/",
   "applicationCategory": "MultimediaApplication",
   "operatingSystem": "Any (web-based)",
   "description": "Upload a video and get the best moments back as vertical, auto-captioned short clips for TikTok, Reels and Shorts.",
   "offers": [
     { "@type": "Offer", "name": "Free plan", "price": "0", "priceCurrency": "USD" },
-    { "@type": "Offer", "name": "Pro plan", "price": "15.00", "priceCurrency": "USD" }
+    { "@type": "Offer", "name": "Pro plan", "price": "15.00", "priceCurrency": "USD" },
+    { "@type": "Offer", "name": "Pro Plus plan", "price": "29.00", "priceCurrency": "USD" }
   ]
 }
 </script>
@@ -71,9 +88,38 @@
     --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
     --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
   }
+  /* Dark mode: same variable set, different values -- everything below
+     already themes off these vars, so no other rule needs to know dark
+     mode exists. data-theme is set on <html> (not <body>) so it's present
+     before body even paints, avoiding a light-mode flash on load. */
+  html[data-theme="dark"] {
+    --ink: #f0eef8; --paper: #14121c; --card: #1e1b29; --accent: #9370f5;
+    --accent-dark: #a888f7; --muted: #9b93ad; --border: #322d42;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.55; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.55; transition: background 0.15s, color 0.15s; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+
+  /* Sidebar */
+  .menu-btn { position: fixed; top: 16px; left: 16px; z-index: 50; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 60; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+  .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; background: var(--card); border-right: 1px solid var(--border); z-index: 61; transform: translateX(-100%); transition: transform 0.2s ease; padding: 20px; display: flex; flex-direction: column; }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar .brand { font-weight: 800; margin-bottom: 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 0.95rem; padding: 10px 12px; border-radius: 8px; }
+  .sidebar nav a:hover { background: var(--paper); }
+  .sidebar .divider { border-top: 1px solid var(--border); margin: 16px 0; }
+  .sidebar .dark-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-weight: 600; font-size: 0.95rem; }
+  .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background 0.15s; }
+  .switch .slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.15s; }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  .sidebar .footer-links { margin-top: auto; font-size: 0.8rem; color: var(--muted); }
+  .sidebar .footer-links a { color: var(--muted); }
   header { text-align: center; padding: 56px 0 20px; }
   .brand { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 6px; }
   .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; }
@@ -183,6 +229,33 @@
 </style>
 </head>
 <body>
+  <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">🎬 Peakcut</div>
+    <nav>
+      <a href="/">App</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/api/docs">API Docs</a>
+      <a href="/settings" id="sidebarSettingsLink" style="display:none">Settings</a>
+    </nav>
+    <div class="divider"></div>
+    <div class="dark-toggle-row">
+      <span>Dark mode</span>
+      <label class="switch">
+        <input type="checkbox" id="darkModeToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="divider"></div>
+    <nav id="sidebarAccountNav">
+      <a href="/auth/google/login" id="sidebarSignIn">Sign in</a>
+      <a href="/auth/logout" id="sidebarSignOut" style="display:none">Sign out</a>
+    </nav>
+    <div class="footer-links">
+      <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+    </div>
+  </aside>
   <div class="wrap">
     <header>
       <div class="brand">🎬 Peakcut</div>
@@ -241,6 +314,16 @@
       <p class="dub-hint">Choose how captions appear on your clips.</p>
     </div>
 
+    <div class="dub-row" id="splitScreenRow">
+      <label for="splitScreenBg">Split-screen background <span class="pro-tag">Pro</span></label>
+      <select id="splitScreenBg">
+        <option value="">Off — normal full-frame clip</option>
+        <option value="custom">Upload my own background…</option>
+      </select>
+      <input type="file" id="splitScreenBgFile" accept="video/*" style="display:none;margin-top:8px;" />
+      <p class="dub-hint">Talking clip on top, a looping background on the bottom — the "Subway Surfers" format. Always renders vertical 9:16.</p>
+    </div>
+
     <div class="dub-row" id="notifyRow" style="display:none">
       <label for="notifyEmail">Email me when it's ready</label>
       <input type="email" id="notifyEmail" placeholder="you@example.com" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;" />
@@ -297,7 +380,7 @@
       <h2>Frequently asked questions</h2>
       <details>
         <summary>Is it really free?</summary>
-        <p>Yes — your first video is free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark.</p>
+        <p>Yes — 5 videos per month are free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark.</p>
       </details>
       <details>
         <summary>How long does it take?</summary>
@@ -342,6 +425,8 @@
     const batchQueue = document.getElementById('batchQueue');
     const queueList = document.getElementById('queueList');
     const processBatchBtn = document.getElementById('processBatchBtn');
+    const splitScreenBg = document.getElementById('splitScreenBg');
+    const splitScreenBgFile = document.getElementById('splitScreenBgFile');
 
     const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
     let fileQueue = []; // for batch uploads
@@ -350,6 +435,30 @@
       const div = document.createElement('div');
       div.textContent = str;
       return div.innerHTML;
+    }
+
+    // Shared by both the single-file and batch upload paths so they can't
+    // drift out of sync (batch used to silently drop caption_style and the
+    // watermark fields, always falling back to server defaults).
+    function buildUploadFormData(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('clip_format', clipFormat.value);
+      formData.append('caption_style', captionStyle.value);
+      if (dubLang.value) formData.append('dub_lang', dubLang.value);
+      if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+      const watermark = JSON.parse(localStorage.getItem('watermarkSettings') || 'null');
+      if (watermark && watermark.text && watermark.text.trim()) {
+        formData.append('watermark_text', watermark.text.trim());
+        formData.append('watermark_color', watermark.color || '#ffffff');
+      }
+      if (splitScreenBg.value) {
+        formData.append('background_id', splitScreenBg.value);
+        if (splitScreenBg.value === 'custom' && splitScreenBgFile.files[0]) {
+          formData.append('background_file', splitScreenBgFile.files[0]);
+        }
+      }
+      return formData;
     }
 
     async function refreshUsage() {
@@ -371,18 +480,25 @@
             signinGate.style.display = 'block';
             dropZone.style.display = 'none';
           }
+          document.getElementById('sidebarSettingsLink').style.display = data.signed_in ? '' : 'none';
+          document.getElementById('sidebarSignIn').style.display = data.signed_in ? 'none' : '';
+          document.getElementById('sidebarSignOut').style.display = data.signed_in ? '' : 'none';
         }
 
         notifyRow.style.display = data.email_configured ? 'block' : 'none';
 
         const quotaBadgeContainer = document.getElementById('quotaBadgeContainer');
+        const planLabel = data.plan === 'plus' ? 'Pro Plus' : (data.pro ? 'Pro' : 'Free');
         if (data.pro) {
-          usageNote.innerHTML = 'Pro plan — unlimited videos · <a href="/billing-portal">Manage billing</a>';
+          usageNote.innerHTML = data.remaining > 0
+            ? `${planLabel} plan: ${data.remaining} of ${data.limit} video(s) remaining this month · <a href="/billing-portal">Manage billing</a>`
+            : `${planLabel} plan used up (${data.limit}/${data.limit} this month) · <a href="/billing-portal">Manage billing</a>`;
           proBadge.style.display = 'inline-block';
+          proBadge.textContent = planLabel.toUpperCase();
           adSlot.style.display = 'none';
           paywall.style.display = 'none';
-          quotaBadgeContainer.innerHTML = '';
           dubLang.disabled = false;
+          splitScreenBg.disabled = false;
         } else {
           usageNote.textContent = data.remaining > 0
             ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
@@ -391,16 +507,23 @@
           adSlot.style.display = 'block';
           dubLang.disabled = true;
           dubLang.value = '';
-
-          // Show quota badge with color coding
-          let badgeClass = 'available';
-          if (data.remaining === 0) badgeClass = 'full';
-          else if (data.remaining <= 2) badgeClass = 'warning';
-
-          quotaBadgeContainer.innerHTML = data.remaining > 0
-            ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
-            : `<div class="quota-badge full">⚠️ No videos remaining — upgrade to continue</div>`;
+          splitScreenBg.disabled = true;
+          splitScreenBg.value = '';
+          splitScreenBgFile.style.display = 'none';
+          splitScreenBgFile.value = '';
         }
+
+        // Show quota badge with color coding for every tier now that all of
+        // them have a real monthly cap (Pro/Pro Plus used to show nothing
+        // here since they were treated as unlimited).
+        let badgeClass = 'available';
+        if (data.remaining === 0) badgeClass = 'full';
+        else if (data.remaining <= 2) badgeClass = 'warning';
+
+        const outOfQuotaAction = data.plan === 'plus' ? 'contact support' : 'upgrade';
+        quotaBadgeContainer.innerHTML = data.remaining > 0
+          ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
+          : `<div class="quota-badge full">⚠️ No videos remaining — ${outOfQuotaAction} to continue</div>`;
         return data;
       } catch (e) {
         usageNote.textContent = '';
@@ -409,6 +532,47 @@
 
     upgradeBtn.addEventListener('click', () => {
       window.location.href = '/pricing';
+    });
+
+    async function loadBackgroundOptions() {
+      try {
+        const res = await fetch('/api/backgrounds');
+        const data = await res.json();
+        const customOption = splitScreenBg.querySelector('option[value="custom"]');
+        data.backgrounds.forEach(bg => {
+          const opt = document.createElement('option');
+          opt.value = bg.id;
+          opt.textContent = bg.available ? bg.label : `${bg.label} (coming soon)`;
+          opt.disabled = !bg.available;
+          splitScreenBg.insertBefore(opt, customOption);
+        });
+      } catch (e) {
+        console.error('Failed to load background list:', e);
+      }
+    }
+    loadBackgroundOptions();
+
+    // Split-screen and dubbing are mutually exclusive server-side (see
+    // /process) -- reset the other one here instead of letting the user
+    // round-trip into that error after uploading.
+    splitScreenBg.addEventListener('change', () => {
+      splitScreenBgFile.style.display = splitScreenBg.value === 'custom' ? 'block' : 'none';
+      if (!splitScreenBg.value) splitScreenBgFile.value = '';
+      if (splitScreenBg.value) {
+        dubLang.value = '';
+        clipFormat.value = 'vertical';
+        clipFormat.disabled = true;
+      } else {
+        clipFormat.disabled = false;
+      }
+    });
+    dubLang.addEventListener('change', () => {
+      if (dubLang.value) {
+        splitScreenBg.value = '';
+        splitScreenBgFile.style.display = 'none';
+        splitScreenBgFile.value = '';
+        clipFormat.disabled = false;
+      }
     });
 
     function addFilesToQueue(files) {
@@ -461,11 +625,7 @@
       for (let i = 0; i < fileQueue.length; i++) {
         const file = fileQueue[i];
         statusEl.textContent = `Uploading ${i + 1} of ${fileQueue.length}: ${file.name}…`;
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('clip_format', clipFormat.value);
-        if (dubLang.value) formData.append('dub_lang', dubLang.value);
-        if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+        const formData = buildUploadFormData(file);
         try {
           const res = await fetch('/process', { method: 'POST', body: formData });
           if (res.status === 402) {
@@ -508,12 +668,7 @@
       setBusy(true);
       statusEl.textContent = `Uploading ${file.name}…`;
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('clip_format', clipFormat.value);
-      formData.append('caption_style', captionStyle.value);
-      if (dubLang.value) formData.append('dub_lang', dubLang.value);
-      if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
+      const formData = buildUploadFormData(file);
 
       let jobId;
       try {
@@ -553,22 +708,39 @@
     async function pollMultipleJobs(jobIds, startedAt) {
       let completed = [];
       let failed = [];
+      let lostToRestart = false;
       let stopped = false;
 
       const tick = async () => {
         if (stopped) return;
         try {
-          const results = await Promise.all(jobIds.map(jid => fetch(`/job/${jid}`).then(r => r.json().catch(() => null))));
+          const results = await Promise.all(jobIds.map(jid =>
+            fetch(`/job/${jid}`).then(async r => ({ httpStatus: r.status, data: await r.json().catch(() => null) }))
+          ));
 
           for (let i = 0; i < jobIds.length; i++) {
-            const data = results[i];
-            if (!data) continue;
+            const { httpStatus, data } = results[i];
             const jid = jobIds[i];
+            if (completed.includes(jid) || failed.includes(jid)) continue;
 
-            if (data.status === 'done' && !completed.includes(jid)) {
+            // Same scenario pollJob (the single-upload poller) already
+            // handles: the server restarted mid-job and lost the in-memory
+            // job state, so /job/{id} now 404s forever. Without this,
+            // data.status here is undefined (matches neither 'done' nor
+            // 'failed' below), `done` never reaches jobIds.length, and this
+            // loop polls forever with no way to finish or tell the user --
+            // exactly what happened before this fix.
+            if (httpStatus === 404) {
+              failed.push(jid);
+              lostToRestart = true;
+              continue;
+            }
+            if (!data) continue;
+
+            if (data.status === 'done') {
               completed.push(jid);
               renderClips(data.clips, jid);
-            } else if (data.status === 'failed' && !failed.includes(jid)) {
+            } else if (data.status === 'failed') {
               failed.push(jid);
             }
           }
@@ -580,7 +752,9 @@
           if (allDone) {
             stopped = true;
             progressBar.style.width = '100%';
-            statusEl.textContent = `Done — ${completed.length}/${jobIds.length} videos processed successfully.`;
+            statusEl.textContent = lostToRestart
+              ? `Done — ${completed.length}/${jobIds.length} processed successfully. Some were lost when the server restarted mid-job; if that used up your monthly quota, contact support and we'll sort it out.`
+              : `Done — ${completed.length}/${jobIds.length} videos processed successfully.`;
             setBusy(false);
             await refreshUsage();
           } else {
@@ -603,9 +777,12 @@
         try {
           const res = await fetch(`/job/${jobId}`);
           if (res.status === 404) {
-            // the server restarted and lost the in-memory job — don't spin forever
+            // the server restarted and lost the in-memory job — don't spin forever.
+            // Note: unlike a normal processing failure, the monthly quota slot this
+            // job reserved is NOT automatically refunded in this case (job state is
+            // in-memory only), so we don't claim otherwise here.
             stopped = true;
-            statusEl.textContent = 'Sorry — the server restarted mid-job and your video was lost. Your free video was not used up; please try again.';
+            statusEl.textContent = 'Sorry — the server restarted mid-job and your video was lost. If this used up your monthly quota, contact support and we\'ll sort it out.';
             setBusy(false);
             await refreshUsage();
             return;
@@ -669,9 +846,7 @@
         <h2 style="margin:0;flex:1">Your clips</h2>
         <a href="/jobs/${jobId}/download/all" class="download" style="white-space:nowrap">📦 Download All as ZIP</a>
       </div>` : '';
-      clipsEl.innerHTML = header + clips.map((c, idx) => {
-        const shareText = `"${c.text}"\n\n#shorts #reels #fyp #viral`;
-        return `
+      clipsEl.innerHTML = header + clips.map((c, idx) => `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
@@ -680,18 +855,39 @@
             <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
             <div class="actions">
               <a class="download" href="${encodeURI(c.url)}" download>Download</a>
-              <button class="share-btn" onclick="copyToClipboard('${shareText.replace(/'/g, "\\'")}', this)">Share</button>
+              <button class="share-btn" data-clip-idx="${idx}">Share</button>
               <a class="download" href="https://tiktok.com/upload" target="_blank" style="background:var(--accent);flex:1;text-align:center;text-decoration:none">TikTok ↗</a>
             </div>
           </div>
         </div>
-      `;
-      }).join('');
+      `).join('');
+
+      // Share text is built from clip.text (transcribed speech, which can
+      // rarely include stray quote/HTML-like characters -- Whisper is known
+      // to hallucinate arbitrary text on silent/noisy audio) via a data
+      // attribute + delegated listener rather than inline onclick="...",
+      // which used to hand-escape only single quotes and could be broken
+      // out of by a literal double-quote in the transcript.
+      clipsEl.querySelectorAll('.share-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = clips[Number(btn.dataset.clipIdx)];
+          copyToClipboard(`"${c.text}"\n\n#shorts #reels #fyp #viral`, btn);
+        });
+      });
     }
 
     const params = new URLSearchParams(location.search);
     if (params.get('upgraded') === '1') {
-      statusEl.textContent = '🎉 Pro activated — unlimited videos, no watermark. Thanks for upgrading!';
+      statusEl.textContent = '🎉 Upgrade activated — more videos per month, no watermark. Thanks for upgrading!';
+      history.replaceState(null, '', '/');
+    } else if (params.get('upgrade_pending') === '1') {
+      // Set by both the crypto checkout success redirect and PayPal's
+      // confirm-checkout fallback when its brief live-status poll hasn't
+      // confirmed yet -- previously silently dropped, so paying via
+      // crypto (or hitting PayPal's slow-confirmation path) landed back
+      // on the homepage with zero acknowledgment the payment was even
+      // received, let alone being processed.
+      statusEl.textContent = "Payment received — your upgrade will activate automatically once it's confirmed, usually within a few minutes.";
       history.replaceState(null, '', '/');
     } else if (params.get('upgrade_error') === '1') {
       statusEl.textContent = "Something went wrong confirming your upgrade — if you were charged, contact support and we'll sort it out.";
@@ -709,16 +905,53 @@
 
     refreshUsage();
 
+    // ── Sidebar + dark mode ───────────────────────────────────────────────
+    (function () {
+      const menuBtn = document.getElementById('menuBtn');
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      const darkToggle = document.getElementById('darkModeToggle');
+
+      function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('open');
+        menuBtn.setAttribute('aria-expanded', 'true');
+      }
+      function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+        menuBtn.setAttribute('aria-expanded', 'false');
+      }
+      menuBtn.addEventListener('click', () => {
+        sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+      });
+      overlay.addEventListener('click', closeSidebar);
+
+      // Reflect the theme the early inline <head> script already applied
+      // (see top of <head>) so the switch shows the right state on load,
+      // without re-deciding the theme itself.
+      darkToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark';
+      darkToggle.addEventListener('change', () => {
+        if (darkToggle.checked) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('peakcut-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.setItem('peakcut-theme', 'light');
+        }
+      });
+    })();
+
     // ── Simple Chatbot for Customer Support ──────────────────────────────
     const chatbotData = {
       "how long": "Usually 2–5 minutes depending on video length. Transcription is typically the longest step.",
       "what videos work": "Best: podcasts, interviews, talks, sermons, lectures. Avoid: music-only, silent footage.",
       "why failed": "Most common: video too short, no clear speech, or unsupported codec. Try a longer video with clearer audio.",
-      "what is pro": "Pro ($15/mo) gives you unlimited clips instead of 5/month, removes the watermark, and unlocks dubbing to Spanish/French/Portuguese.",
+      "what is pro": "Pro ($15/mo) gives you 20 videos/month instead of 5, removes the watermark, unlocks dubbing to Spanish/French/Portuguese, and split-screen backgrounds. Pro Plus ($29/mo) bumps that to 50/month.",
       "how download": "Each clip has a download button. Or use 'Download All as ZIP' to get all 3 clips + metadata in one file.",
       "can i edit": "Peakcut auto-cuts and captions. For further editing, download the MP4 and use CapCut, Adobe Premiere, or similar.",
-      "refund": "We process refunds within 5–7 business days. Contact support@peakcut.example with your order details.",
-      "delete account": "Email support@peakcut.example and we'll delete your data within 24 hours.",
+      "refund": "We don't offer refunds for time already paid (see our Terms) — but you can cancel any time to stop future charges. Email __CONTACT_EMAIL__ if you need help with that.",
+      "delete account": "Email __CONTACT_EMAIL__ and we'll delete your data within 24 hours.",
     };
 
     function initChatbot() {
@@ -781,7 +1014,7 @@
           }
         }
         if (!found) {
-          setTimeout(() => addMessage("I'm not sure about that. Try emailing support@peakcut.example for help, or check the FAQ above.", 'bot'), 300);
+          setTimeout(() => addMessage("I'm not sure about that. Try emailing __CONTACT_EMAIL__ for help, or check the FAQ above.", 'bot'), 300);
         }
       });
       input.addEventListener('keypress', (e) => {

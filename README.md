@@ -30,17 +30,79 @@ first real request isn't stuck downloading a ~250MB model.
 
 ## How it works
 
-1. `POST /process` accepts a video upload, reserves the free-tier quota, and returns a job id instantly; a single background worker processes jobs one at a time (two concurrent Whisper+ffmpeg runs would OOM a 512MB instance) while the front-end polls `GET /job/{id}` for queued/processing/done/failed. The site stays fully responsive during the minutes-long processing and long uploads can't die at a gateway timeout.
+1. `POST /process` accepts a video upload, reserves that tier's monthly quota, and returns a job id instantly; a single background worker processes jobs one at a time (two concurrent Whisper+ffmpeg runs would OOM a 512MB instance) while the front-end polls `GET /job/{id}` for queued/processing/done/failed. The site stays fully responsive during the minutes-long processing and long uploads can't die at a gateway timeout. The queue is priority-ordered (Pro Plus, then Pro, then Free, FIFO within a tier), a max video length (`MAX_VIDEO_DURATION_MIN`, default 45) is checked via `ffprobe` before Whisper even starts, and every `ffmpeg`/`ffprobe` subprocess call has a timeout — all so one oversized or hung upload can't wedge the single queue for everyone behind it.
 2. `pipeline_lib.transcribe()` runs self-hosted faster-whisper (small model, CPU, int8) — no API key, no per-minute cost.
 3. `score_candidates()` scores every transcript segment by real audio loudness (`ffmpeg astats`) plus cheap text signals (punctuation, contrast words, punchy short words) — no LLM call.
 4. `pick_top_n()` selects the top 3 non-overlapping segments.
 5. `render_clip()` cuts each segment, converts to vertical 1080x1920, burns in short punchy word-chunk captions (timed to actual speech via Whisper's word-level timestamps) plus a watermark (free plan only).
 
+## SEO / launch readiness
+
+- Every public page's `<title>`/description/Open Graph/Twitter Card tags and
+  `<link rel="canonical">` are templated with `__SITE_URL__`, substituted
+  server-side from `config.SITE_URL` when the page is served (`app.py`) —
+  this used to be a hardcoded stale Render URL baked into `index.html`'s
+  JSON-LD structured data, which would actively confuse search engines about
+  the real canonical URL once deployed anywhere else. `/settings` is
+  deliberately `noindex, nofollow` (private, authenticated, no SEO value)
+  and isn't in the sitemap.
+- `GET /sitemap.xml` lists every real indexable page; `GET /robots.txt`
+  points crawlers at it and disallows `/jobs/` (ephemeral, no SEO value),
+  `/settings`, and `/api/...` except `/api/docs` specifically (the one
+  `/api/...` route actually meant to be crawled).
+- **`assets/og-image.png` is referenced by every page's `og:image`/
+  `twitter:image` tags but not included** — same reasoning as the
+  split-screen background videos: can't fabricate a real branded image from
+  this sandbox. Until it's added, link previews on Twitter/Discord/Slack/
+  iMessage etc. will show no image (not a broken one — platforms handle a
+  missing og:image gracefully, just with a plainer-looking preview). Add a
+  1200×630 PNG or JPG there — a screenshot of the app in action, or a
+  branded card with the Peakcut logo/name, works well for this format.
+
+## Split-screen backgrounds (Pro/Pro Plus)
+
+The "Subway Surfers"-style format — the talking clip on top, a looping
+background video on the bottom. `render_split_screen_clip()` in
+`pipeline_lib.py` composites the two with a single `ffmpeg -filter_complex`
+(`vstack`), looping the background indefinitely (`-stream_loop -1`) and
+capping the output at the clip's real duration (`-t`) so a short background
+file never limits how long the composited clip can be. Always renders
+vertical 1080x1920 — a split screen only makes sense in that orientation, so
+it ignores the normal `clip_format` choice. Mutually exclusive with dubbing
+for now (combining them would need a third rendering path with its own
+audio-timing interactions — not worth the complexity for v1).
+
+Two ways to pick a background, both available from Pro/Pro Plus:
+
+- **Stock library** — `backgrounds.py` holds a small, hand-maintained
+  `STOCK_BACKGROUNDS` registry (id → label + filename). **The repo ships
+  with this registry populated but the actual video files NOT included** —
+  see `assets/backgrounds/README.md` for exactly what to add and the
+  licensing to look for (CC0 strongly preferred, since this repo is public).
+  `GET /api/backgrounds` reports each entry's `available` flag so the
+  frontend can grey out ones whose file hasn't been dropped in yet, and
+  picking an unavailable one server-side fails with a clear "not available
+  yet" error rather than crashing a render.
+- **Custom upload** — a second file per job, capped far stricter than the
+  main video upload (`BACKGROUND_UPLOAD_MB`, default 50MB; server-side
+  duration check via `ffprobe`, `MAX_BACKGROUND_DURATION_SEC`, default 60s)
+  since it's just a looping visual layer, not something that needs to be
+  long or high-res — and every split-screen job already costs an extra
+  `ffmpeg` composite pass beyond a normal render. Deleted after the job
+  completes, same as the main upload; stock library files are never deleted
+  (they're shared across every future job).
+
+Security note if you're extending this: background selection only ever
+resolves through `backgrounds.get_background_path()`'s fixed id→path lookup
+or a server-generated upload filename — never a raw user string used
+directly as a path. If you add a way to reference backgrounds by anything
+else, keep that property.
+
 ## Free tier, Pro plan, and ads
 
-- `config.py` holds every setting you need to fill in — Stripe keys, AdSense publisher ID, free-plan limit, max upload size. Every placeholder is marked `REPLACE_ME` / `REPLACE-ME`.
-- Free users are capped at `FREE_LIMIT` (default 1) video. Once Google Sign-In is configured (see below), usage is tracked per Google account (`acct:{sub}`); until then it falls back to a per-browser cookie (`clipai_cid`), which is fine for an MVP but not abuse-proof since clearing cookies resets the counter. Either way the counter lives in `usage.json`, which gets wiped on every redeploy/spin-down on a host with no persistent disk (Render's free tier included) — low stakes for a free counter.
-- **Pro status is deliberately NOT stored in that same file.** The "Upgrade to Pro" button hits `/create-checkout-session` → Stripe Checkout → `/confirm-checkout`, which verifies the session server-side and stores the Stripe customer ID in a cookie (`clipai_customer`). From then on, every request checks that customer's subscription status live against Stripe's API (`check_pro_status` in `app.py`) instead of trusting a local flag. This matters because a local flag would get wiped by the same disk-persistence issue above — and unlike the free counter, losing a paying customer's access on every restart is a real problem, not a minor one. `/stripe/webhook` is still wired up for logging, but Pro access no longer depends on it firing.
+- `config.py` holds every setting you need to fill in — Stripe keys, AdSense publisher ID, per-tier plan limits, max upload size. Every placeholder is marked `REPLACE_ME` / `REPLACE-ME`.
+- Every tier is capped at a monthly video count — `FREE_LIMIT` (default 5), `PRO_LIMIT` (default 20), `PRO_PLUS_LIMIT` (default 50), matching what `pricing.html` advertises. The counter is keyed by identity (Google account once Sign-In is configured, otherwise a per-browser cookie) and tagged with the current `YYYY-MM` period so it resets itself on the 1st with no cron job — see `reserve_use`/`current_period` in `app.py`. It lives in `jobs/usage.json`, which rides the same Docker volume as everything else in `jobs/` so an Oracle VM redeploy doesn't wipe it (on Render's ephemeral free tier it gets wiped on every redeploy/spin-down regardless — low stakes there for the free tier, but see the Oracle section below for why it matters more on a persistent VM).
+- **Pro/Pro Plus tier is deliberately NOT stored in that same file, only the video count is.** The "Upgrade" buttons hit `/create-checkout-session[-plus]` → Stripe Checkout → `/confirm-checkout`, which verifies the session server-side and stores the Stripe customer ID in a cookie (`clipai_customer`). From then on, every request checks that customer's subscription live against Stripe's API and reads which price ID they're on to tell Pro from Pro Plus (`get_account_tier` in `app.py`) instead of trusting a local flag. This matters because a local flag would get wiped by the same disk-persistence issue above — and unlike a video counter, losing a paying customer's tier on every restart is a real problem, not a minor one. `/stripe/webhook` is still wired up for logging, but tier detection no longer depends on it firing.
 - The free-tier ad slot in `index.html` is a placeholder until AdSense approves the site and you paste in your publisher ID.
 
 ### One-time setup to actually take payments and show ads
@@ -101,6 +163,24 @@ proxy and HTTPS yourself (both handled by the files in this repo).
 Redeploying after a code change: `cd /opt/peakcut && git pull && sudo docker
 compose up -d --build` — no CI/CD wired up, matching how deploys to Render
 were done manually via API throughout this project.
+
+**Using the extra RAM.** On Render's 512MB free tier, the app ran one job at
+a time by design to keep memory predictable. On Oracle's extra headroom you
+have two independent knobs, and they trade off differently:
+
+- `WHISPER_MODEL=base` or `small` (env var, default `tiny`) — better
+  transcription accuracy, no code changes.
+- `WORKER_COUNT=2` (env var, default `1`) — processes that many jobs
+  concurrently instead of one at a time, so a burst of uploads doesn't queue
+  behind a single in-progress video. Each worker thread now caches its own
+  Whisper model and Piper voices (`threading.local()` in `pipeline_lib.py`
+  and `dub_lib.py`) instead of sharing one global — that used to make
+  concurrent workers an unsupported configuration (a lazy-init race, and a
+  dub job's model-unload yanking the model out from under every other
+  worker mid-job); both are fixed now. Raise this to roughly your VM's OCPU
+  count (e.g. `2` on a 2-OCPU Ampere instance) — each worker adds ~75MB
+  baseline (the `tiny` Whisper model) plus whatever it's actively rendering,
+  so watch memory if you also bump `WHISPER_MODEL` to `base`/`small`.
 
 Unlike Render's free tier, `docker-compose.yml` gives the app container a real
 persistent volume for `jobs/` — it survives restarts here, though Pro status

@@ -17,9 +17,11 @@ language) since only {es,fr,pt} Piper voices are warmed into the Docker
 image. Widening this to more languages later just means warming another
 voice — no code changes needed here.
 """
+import concurrent.futures
 import logging
 import os
 import subprocess
+import threading
 
 from deep_translator import GoogleTranslator
 from piper import PiperVoice
@@ -31,6 +33,27 @@ log = logging.getLogger("clipai.dub")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VOICES_DIR = os.environ.get("PIPER_VOICES_DIR", os.path.join(BASE_DIR, "voices"))
 
+# Same reasoning as pipeline_lib's timeouts: a hung ffmpeg call here would
+# otherwise wedge the single-worker queue for every job behind it, not just
+# this one.
+ATEMPO_TIMEOUT = int(os.environ.get("FFMPEG_ATEMPO_TIMEOUT_SECONDS", "60"))
+RENDER_TIMEOUT = pipeline_lib.RENDER_TIMEOUT
+
+# deep-translator's GoogleTranslator calls requests.get() with no `timeout=`
+# at all (checked the installed library source), and it has no parameter to
+# pass one through -- unlike every ffmpeg call above, this is a real
+# outbound request to a third party, so it can hang far longer than a local
+# subprocess if that endpoint stalls. socket.setdefaulttimeout() does NOT
+# fix this -- verified against a socket that accepts but never responds, and
+# requests/urllib3 ignored it and hung regardless. A bounded executor is the
+# only thing that actually works here: we can't kill the underlying blocked
+# thread (Python has no API for that), but future.result(timeout=...) lets
+# the worker give up and move on instead of hanging forever. max_workers > 1
+# so one stuck translate call doesn't also block every later one queued
+# behind it in the pool.
+TRANSLATE_TIMEOUT = int(os.environ.get("TRANSLATE_TIMEOUT_SECONDS", "20"))
+_translate_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="dub-translate")
+
 # name shown to users -> piper voice file (without .onnx)
 DUB_LANGUAGES = {
     "es": {"label": "Spanish", "voice": "es_ES-carlfm-x_low"},
@@ -38,18 +61,33 @@ DUB_LANGUAGES = {
     "pt": {"label": "Portuguese", "voice": "pt_BR-faber-medium"},
 }
 
-_voice_cache: dict = {}
+# Thread-local for the same reason as pipeline_lib's Whisper model cache:
+# with WORKER_COUNT>1, a shared global dict here had the same lazy-init race
+# (two worker threads both missing the cache and both loading the same
+# voice) -- keeping it thread-local removes the race and any cross-worker
+# interference entirely.
+_local = threading.local()
 
 
 def get_voice(lang_code: str) -> PiperVoice:
-    if lang_code not in _voice_cache:
+    cache = getattr(_local, "voice_cache", None)
+    if cache is None:
+        cache = {}
+        _local.voice_cache = cache
+    if lang_code not in cache:
         model_path = os.path.join(VOICES_DIR, f"{DUB_LANGUAGES[lang_code]['voice']}.onnx")
-        _voice_cache[lang_code] = PiperVoice.load(model_path)
-    return _voice_cache[lang_code]
+        cache[lang_code] = PiperVoice.load(model_path)
+    return cache[lang_code]
 
 
 def translate_text(text: str, target_lang: str, source_lang: str = "en") -> str:
-    return GoogleTranslator(source=source_lang, target=target_lang).translate(text)
+    future = _translate_executor.submit(
+        lambda: GoogleTranslator(source=source_lang, target=target_lang).translate(text)
+    )
+    try:
+        return future.result(timeout=TRANSLATE_TIMEOUT)
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError(f"Translation request timed out after {TRANSLATE_TIMEOUT}s")
 
 
 def synthesize_speech(text: str, target_lang: str, out_wav_path: str):
@@ -80,13 +118,17 @@ def _atempo_chain(factor: float) -> str:
     return ",".join(filters)
 
 
-def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True):
+def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True,
+                        watermark_text=None, watermark_color=None):
     """Same visual pipeline as pipeline_lib.render_clip (vertical crop,
     burned captions, watermark) but with the audio track replaced by
     translated, synthesized speech time-stretched to fit the clip, and
     captions burned from the translated text instead of the original."""
     translated = translate_text(seg["text"], target_lang, source_lang)
     virality = seg.get("virality_score", 0)
+    # Computed up front (not just at the end) so every return path — including
+    # the timeout ones below — has a real path for the manifest's "file" entry.
+    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
 
     raw_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub_raw.wav")
     synthesize_speech(translated, target_lang, raw_wav)
@@ -96,10 +138,14 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     tempo_filter = _atempo_chain(tts_duration / clip_duration)
 
     stretched_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub.wav")
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", raw_wav, "-af", tempo_filter, stretched_wav],
-        capture_output=True, text=True,
-    )
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", raw_wav, "-af", tempo_filter, stretched_wav],
+            capture_output=True, text=True, timeout=ATEMPO_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        os.unlink(raw_wav)
+        return out_path, translated, False, f"ffmpeg tempo-stretch timed out after {ATEMPO_TIMEOUT}s"
     os.unlink(raw_wav)
 
     # Even-spaced pseudo word-chunk captions across the clip's duration —
@@ -121,7 +167,6 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     with open(srt_path, "w") as f:
         f.write("\n".join(lines))
 
-    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
     vf = (
         "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e,"
         f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"
@@ -129,10 +174,15 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
         "Bold=1,Alignment=2,MarginV=140'"
     )
     if watermark:
-        vf += (
-            f",drawtext=text='{pipeline_lib.WATERMARK}':fontcolor=white@0.6:fontsize=18:"
-            "x=(w-text_w)/2:y=h-70"
-        )
+        # Free plan: always the mandatory watermark, never the custom one.
+        vf += "," + pipeline_lib._watermark_filter(pipeline_lib.WATERMARK, "#FFFFFF", out_dir, rank)
+    elif watermark_text:
+        # Pro Plus opt-in custom watermark — see pipeline_lib.render_clip's
+        # matching branch for why textfile= is used instead of embedding
+        # user-supplied text directly into the filter string.
+        wf = pipeline_lib._watermark_filter(watermark_text, watermark_color, out_dir, rank)
+        if wf:
+            vf += "," + wf
     cmd = [
         "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
         "-i", video_path, "-i", stretched_wav,
@@ -141,6 +191,10 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
         out_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.unlink(stretched_wav)
+        return out_path, translated, False, f"ffmpeg render timed out after {RENDER_TIMEOUT}s"
     os.unlink(stretched_wav)
     return out_path, translated, result.returncode == 0, result.stderr[-800:]

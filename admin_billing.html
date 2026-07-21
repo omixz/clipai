@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin: Billing — Peakcut</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
+    --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.6; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 30px 0 20px; }
+  h1 { font-size: 1.5rem; margin: 8px 0; }
+
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .section h2 { margin-top: 0; font-size: 1.05rem; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+  th { color: var(--muted); font-weight: 600; }
+  .tier-pro { color: var(--accent-dark); font-weight: 600; }
+  .tier-pro_plus { color: #b8860b; font-weight: 600; }
+  .empty { color: var(--muted); font-style: italic; }
+
+  form.inline { display: inline; }
+  button.revoke { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.82rem; cursor: pointer; color: #b3261e; }
+
+  .grant-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .grant-form .field { flex: 1; min-width: 160px; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+  input[type="email"], select { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.92rem; font-family: inherit; }
+  button.primary { padding: 10px 20px; border-radius: 8px; border: none; background: var(--accent); color: white; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Billing admin — manual grants</h1>
+      <p style="color:var(--muted)">Grant/revoke Pro or Pro Plus by hand after a direct bank transfer lands. Only visible to accounts in ADMIN_EMAILS.</p>
+    </header>
+
+    <div class="section">
+      <h2>Grant access</h2>
+      <form class="grant-form" method="post" action="/admin/billing/grant">
+        <div class="field">
+          <label for="email">Customer's Google account email</label>
+          <input type="email" id="email" name="email" required placeholder="customer@example.com" />
+        </div>
+        <div class="field" style="flex: 0 0 140px">
+          <label for="tier">Tier</label>
+          <select id="tier" name="tier">
+            <option value="pro">Pro</option>
+            <option value="pro_plus">Pro Plus</option>
+          </select>
+        </div>
+        <button class="primary" type="submit">Grant</button>
+      </form>
+    </div>
+
+    <div class="section">
+      <h2>Current manual grants</h2>
+      __GRANTS_TABLE__
+    </div>
+  </div>
+</body>
+</html>
