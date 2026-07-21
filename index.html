@@ -880,6 +880,15 @@
     if (params.get('upgraded') === '1') {
       statusEl.textContent = '🎉 Upgrade activated — more videos per month, no watermark. Thanks for upgrading!';
       history.replaceState(null, '', '/');
+    } else if (params.get('upgrade_pending') === '1') {
+      // Set by both the crypto checkout success redirect and PayPal's
+      // confirm-checkout fallback when its brief live-status poll hasn't
+      // confirmed yet -- previously silently dropped, so paying via
+      // crypto (or hitting PayPal's slow-confirmation path) landed back
+      // on the homepage with zero acknowledgment the payment was even
+      // received, let alone being processed.
+      statusEl.textContent = "Payment received — your upgrade will activate automatically once it's confirmed, usually within a few minutes.";
+      history.replaceState(null, '', '/');
     } else if (params.get('upgrade_error') === '1') {
       statusEl.textContent = "Something went wrong confirming your upgrade — if you were charged, contact support and we'll sort it out.";
       history.replaceState(null, '', '/');
