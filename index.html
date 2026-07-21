@@ -708,22 +708,39 @@
     async function pollMultipleJobs(jobIds, startedAt) {
       let completed = [];
       let failed = [];
+      let lostToRestart = false;
       let stopped = false;
 
       const tick = async () => {
         if (stopped) return;
         try {
-          const results = await Promise.all(jobIds.map(jid => fetch(`/job/${jid}`).then(r => r.json().catch(() => null))));
+          const results = await Promise.all(jobIds.map(jid =>
+            fetch(`/job/${jid}`).then(async r => ({ httpStatus: r.status, data: await r.json().catch(() => null) }))
+          ));
 
           for (let i = 0; i < jobIds.length; i++) {
-            const data = results[i];
-            if (!data) continue;
+            const { httpStatus, data } = results[i];
             const jid = jobIds[i];
+            if (completed.includes(jid) || failed.includes(jid)) continue;
 
-            if (data.status === 'done' && !completed.includes(jid)) {
+            // Same scenario pollJob (the single-upload poller) already
+            // handles: the server restarted mid-job and lost the in-memory
+            // job state, so /job/{id} now 404s forever. Without this,
+            // data.status here is undefined (matches neither 'done' nor
+            // 'failed' below), `done` never reaches jobIds.length, and this
+            // loop polls forever with no way to finish or tell the user --
+            // exactly what happened before this fix.
+            if (httpStatus === 404) {
+              failed.push(jid);
+              lostToRestart = true;
+              continue;
+            }
+            if (!data) continue;
+
+            if (data.status === 'done') {
               completed.push(jid);
               renderClips(data.clips, jid);
-            } else if (data.status === 'failed' && !failed.includes(jid)) {
+            } else if (data.status === 'failed') {
               failed.push(jid);
             }
           }
@@ -735,7 +752,9 @@
           if (allDone) {
             stopped = true;
             progressBar.style.width = '100%';
-            statusEl.textContent = `Done — ${completed.length}/${jobIds.length} videos processed successfully.`;
+            statusEl.textContent = lostToRestart
+              ? `Done — ${completed.length}/${jobIds.length} processed successfully. Some were lost when the server restarted mid-job; if that used up your monthly quota, contact support and we'll sort it out.`
+              : `Done — ${completed.length}/${jobIds.length} videos processed successfully.`;
             setBusy(false);
             await refreshUsage();
           } else {
