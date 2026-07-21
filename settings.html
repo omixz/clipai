@@ -1,6 +1,13 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+  (function () {
+    var saved = localStorage.getItem('peakcut-theme');
+    var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  })();
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Settings — Peakcut</title>
@@ -14,9 +21,33 @@
     --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
     --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
   }
+  html[data-theme="dark"] {
+    --ink: #f0eef8; --paper: #14121c; --card: #1e1b29; --accent: #9370f5;
+    --accent-dark: #a888f7; --muted: #9b93ad; --border: #322d42;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.6; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.6; transition: background 0.15s, color 0.15s; }
   .wrap { max-width: 600px; margin: 0 auto; padding: 0 20px; }
+
+  .menu-btn { position: fixed; top: 16px; left: 16px; z-index: 50; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--ink); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 60; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+  .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; background: var(--card); border-right: 1px solid var(--border); z-index: 61; transform: translateX(-100%); transition: transform 0.2s ease; padding: 20px; display: flex; flex-direction: column; }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar .brand { font-weight: 800; margin-bottom: 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 0.95rem; padding: 10px 12px; border-radius: 8px; }
+  .sidebar nav a:hover { background: var(--paper); }
+  .sidebar .divider { border-top: 1px solid var(--border); margin: 16px 0; }
+  .sidebar .dark-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-weight: 600; font-size: 0.95rem; }
+  .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background 0.15s; }
+  .switch .slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.15s; }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  .sidebar .footer-links { margin-top: auto; font-size: 0.8rem; color: var(--muted); }
+  .sidebar .footer-links a { color: var(--muted); }
   header { text-align: center; padding: 40px 0 20px; border-bottom: 1px solid var(--border); margin-bottom: 30px; }
   .brand { font-size: 1rem; font-weight: 800; margin-bottom: 4px; }
   h1 { font-size: 1.8rem; margin: 8px 0; }
@@ -72,6 +103,32 @@
 </style>
 </head>
 <body>
+  <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">☰</button>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">🎬 Peakcut</div>
+    <nav>
+      <a href="/">App</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/api/docs">API Docs</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <div class="divider"></div>
+    <div class="dark-toggle-row">
+      <span>Dark mode</span>
+      <label class="switch">
+        <input type="checkbox" id="darkModeToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="divider"></div>
+    <nav>
+      <a href="/auth/logout">Sign out</a>
+    </nav>
+    <div class="footer-links">
+      <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+    </div>
+  </aside>
   <div class="wrap">
     <header>
       <div class="brand">🎬 Peakcut</div>
@@ -374,6 +431,40 @@
     document.getElementById('watermarkColor').addEventListener('input', updateWatermarkPreview);
 
     loadSettings();
+
+    // ── Sidebar + dark mode ───────────────────────────────────────────────
+    (function () {
+      const menuBtn = document.getElementById('menuBtn');
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      const darkToggle = document.getElementById('darkModeToggle');
+
+      function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('open');
+        menuBtn.setAttribute('aria-expanded', 'true');
+      }
+      function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+        menuBtn.setAttribute('aria-expanded', 'false');
+      }
+      menuBtn.addEventListener('click', () => {
+        sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+      });
+      overlay.addEventListener('click', closeSidebar);
+
+      darkToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark';
+      darkToggle.addEventListener('change', () => {
+        if (darkToggle.checked) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('peakcut-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.setItem('peakcut-theme', 'light');
+        }
+      });
+    })();
   </script>
 </body>
 </html>
