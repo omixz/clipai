@@ -20,9 +20,16 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"
 
 echo "==> Opening firewall for HTTP/HTTPS..."
+# Oracle's Always Free Ubuntu images ship with a default iptables policy that
+# blocks everything but SSH -- these rules are useless if they don't survive
+# a reboot, so install iptables-persistent (which netfilter-persistent save
+# needs) rather than letting a missing package silently no-op the save and
+# leave the site unreachable after the VM's next restart/maintenance reboot.
+sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iptables-persistent
 sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT || true
 sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT || true
-sudo netfilter-persistent save 2>/dev/null || true
+sudo netfilter-persistent save
 
 echo "==> Cloning the repo..."
 sudo mkdir -p "$APP_DIR"

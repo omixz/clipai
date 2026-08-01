@@ -1,7 +1,8 @@
 """Sign in with Google. Kept deliberately dependency-light: httpx (already a
-transitive dep via stripe/huggingface_hub) for the OAuth HTTP calls, PyJWT for
-verifying Google's signed ID token, itsdangerous for signing our own account
-cookie so it can't be forged client-side."""
+transitive dep via huggingface_hub, and also used directly for PayPal API
+calls) for the OAuth HTTP calls, PyJWT for verifying Google's signed ID
+token, itsdangerous for signing our own account cookie so it can't be
+forged client-side."""
 import logging
 import secrets
 import time
@@ -23,6 +24,28 @@ ACCOUNT_MAX_AGE = 60 * 60 * 24 * 365
 _discovery_cache = {"data": None, "at": 0.0}
 _jwks_client = None
 _serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-account-v1")
+
+# SESSION_SECRET_KEY signs this account cookie, which Pro-tier lookups now
+# key off of too (see get_identity/get_account_tier in app.py) -- if a
+# deployer sets up Google Sign-In but forgets to also set this one
+# (plausible: it's not required for the OAuth handshake to look like it
+# works end-to-end), it silently stays at this hardcoded default, which is
+# visible in this public repo. Anyone who's read the source could then forge
+# a validly-"signed" cookie claiming to be any user -- full account takeover
+# / free Pro access for the taking, and nothing about a working-looking
+# sign-in flow would reveal it. Rather than just warn and hope someone reads
+# the logs, read_account_cookie refuses to trust ANY cookie while this is
+# true -- sign-in and billing degrade to "doesn't work" instead of "is
+# forgeable", which is a failure a deployer will actually notice while
+# testing.
+SESSION_SECRET_IS_DEFAULT = config.SESSION_SECRET_KEY == "dev-only-insecure-secret-REPLACE_ME"
+if SESSION_SECRET_IS_DEFAULT:
+    log.warning(
+        "SESSION_SECRET_KEY is still the default placeholder -- signed cookies "
+        "(Google sign-in, and Pro status since it's keyed off the signed-in "
+        "account) will be refused entirely until a real secret is set. Set "
+        "SESSION_SECRET_KEY (openssl rand -hex 32)."
+    )
 
 
 def _discovery():
@@ -88,7 +111,7 @@ def sign_account_cookie(sub: str, email: str) -> str:
 
 
 def read_account_cookie(token: str) -> dict | None:
-    if not token:
+    if not token or SESSION_SECRET_IS_DEFAULT:
         return None
     try:
         return _serializer.loads(token, max_age=ACCOUNT_MAX_AGE)

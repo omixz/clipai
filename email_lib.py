@@ -36,7 +36,7 @@ def send_done_email(to_email: str, clip_urls: list[str], duration: float, is_pro
     links = "".join(f'<li><a href="{config.SITE_URL}{u}">Clip {i+1}</a></li>' for i, u in enumerate(clip_urls))
     upsell = "" if is_pro else (
         '<p style="margin-top:24px;padding:16px;background:#f6f5fb;border-radius:10px;">'
-        'Want no watermark and unlimited videos? '
+        'Want no watermark and more videos per month? '
         f'<a href="{config.SITE_URL}/create-checkout-session">Upgrade to Pro — $15/mo</a></p>'
     )
     html = f"""

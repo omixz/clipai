@@ -9,9 +9,35 @@ services:
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
-      - key: STRIPE_PRICE_ID
+      - key: STRIPE_PRICE_ID_PRO
+        sync: false
+      - key: STRIPE_PRICE_ID_PLUS
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: BANK_NAME
+        sync: false
+      - key: BANK_ACCOUNT_NAME
+        sync: false
+      - key: BANK_ACCOUNT_NUMBER
+        sync: false
+      - key: BANK_BSB
+        sync: false
+      - key: NOWPAYMENTS_API_KEY
+        sync: false
+      - key: NOWPAYMENTS_IPN_SECRET
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_MODE
+        sync: false
+      - key: PAYPAL_PLAN_ID_PRO
+        sync: false
+      - key: PAYPAL_PLAN_ID_PLUS
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
         sync: false
       - key: ADSENSE_PUBLISHER_ID
         sync: false

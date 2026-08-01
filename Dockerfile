@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN mkdir -p jobs && echo '{}' > usage.json
+RUN mkdir -p jobs
 
 # "tiny" keeps memory usage low enough for free-tier hosts (512MB) — "small" OOMs there.
 # Override with WHISPER_MODEL=small env var on a host with more RAM for better accuracy.
