@@ -1,8 +1,26 @@
 # ── ONE-TIME SETUP ──────────────────────────────────────────────────────────
-# 1. PayPal (billing -- swapped in for Lemon Squeezy, which (like Stripe
-#    before it) needed identity/tax verification that wasn't available;
-#    PayPal has a lighter bar to start, though it will still ask for tax
-#    info once volume grows -- deferred, not solved, by this swap):
+# 1. Stripe (the primary/only billing path once configured -- see
+#    STRIPE_CONFIGURED below and app.py's _checkout_methods()):
+#    - STRIPE_SECRET_KEY: Dashboard > Developers > API keys. Use a
+#      sk_test_... key first to test end-to-end before switching to a real
+#      sk_live_... key.
+#    - Create a Pro and a Pro Plus recurring Price (Dashboard > Product
+#      catalog > add a Product with a recurring Price) and paste each
+#      Price's id (starts price_...) into STRIPE_PRICE_ID_PRO/PLUS below.
+#    - STRIPE_WEBHOOK_SECRET: Dashboard > Developers > Webhooks > add an
+#      endpoint at {SITE_URL}/stripe/webhook subscribed to at least
+#      checkout.session.completed and customer.subscription.deleted, then
+#      copy its signing secret (whsec_...). Tier checks are always live
+#      against Stripe directly (see stripe_lib.get_subscription), so this is
+#      for logging/visibility plus a fallback way to link the customer id if
+#      the browser never makes it back to /confirm-checkout -- not something
+#      Pro status depends on arriving.
+# 2. PayPal / bank transfer / NOWPayments (fallback paths, dormant while
+#    Stripe is configured -- see BANK_PAYMENT_CONFIGURED's comment below for
+#    why these exist at all): PayPal swapped in for Lemon Squeezy, which
+#    (like Stripe originally) needed identity/tax verification that wasn't
+#    available at the time; PayPal had a lighter bar to start. None of this
+#    needs touching if Stripe alone is what you want live.
 #    - PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET: developer.paypal.com > Apps &
 #      Credentials > create a REST API app. Use the Sandbox app's credentials
 #      first (PAYPAL_MODE=sandbox) to test end-to-end before going live.
@@ -14,10 +32,10 @@
 #      BILLING.SUBSCRIPTION.ACTIVATED and BILLING.SUBSCRIPTION.CANCELLED
 #      (tier checks are always live against PayPal directly, so this is for
 #      logging/visibility, not something Pro status depends on arriving).
-# 2. AdSense: sign up at https://adsense.google.com with this site's live URL.
+# 3. AdSense: sign up at https://adsense.google.com with this site's live URL.
 #    Once approved, paste your publisher ID below and uncomment the script
 #    tag in index.html's <head>.
-# 3. Google Sign-In: create an OAuth Client ID (Google Cloud Console >
+# 4. Google Sign-In: create an OAuth Client ID (Google Cloud Console >
 #    APIs & Services > Credentials > Create Credentials > OAuth client ID >
 #    Web application). Add {SITE_URL}/auth/google/callback as an authorized
 #    redirect URI. Paste the client ID + secret below. Also set
@@ -25,8 +43,8 @@
 #    — it signs the account cookie that both sign-in AND Pro-tier lookups key
 #    off of (see get_identity/get_account_tier in app.py), so losing it
 #    invalidates every signed-in session and every logged-in Pro subscriber's
-#    access. This one is NOT optional the moment either Google Sign-In or
-#    PayPal is configured: leaving it at the placeholder default
+#    access. This one is NOT optional the moment either Google Sign-In or a
+#    payment method is configured: leaving it at the placeholder default
 #    doesn't fail open, but auth.py deliberately refuses to trust ANY signed
 #    cookie while it's unset, so sign-in and Pro status will look completely
 #    broken (never signed in, never Pro) until you set a real value.
@@ -37,11 +55,22 @@
 #    from "per browser cookie" to "per Google account" — closing the
 #    clear-your-cookies-and-get-another-free-video loophole, which is exactly
 #    how OpusClip/Vidyo.ai gate their free tiers too.
-# 4. Completion email: sign up free at https://resend.com (3,000 emails/mo,
+# 5. Completion email: sign up free at https://resend.com (3,000 emails/mo,
 #    100/day, no card needed), verify a sending domain (or use their shared
 #    onboarding domain for testing), and paste the API key below.
 # ─────────────────────────────────────────────────────────────────────────
 import os
+
+# Stripe -- the primary/only billing path once configured. When
+# STRIPE_CONFIGURED is true, checkout and tier checks go through Stripe
+# exclusively (see app.py's _checkout_methods()); PayPal/bank
+# transfer/NOWPayments below stay in the code as dormant fallbacks rather
+# than deleted, in case Stripe ever needs to be unconfigured again.
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_ID_PRO = os.environ.get("STRIPE_PRICE_ID_PRO", "")
+STRIPE_PRICE_ID_PLUS = os.environ.get("STRIPE_PRICE_ID_PLUS", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_CONFIGURED = bool(STRIPE_SECRET_KEY and STRIPE_PRICE_ID_PRO and STRIPE_PRICE_ID_PLUS)
 
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET", "")
@@ -57,8 +86,9 @@ PAYPAL_CONFIGURED = bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)
 # payment status against, so upgrades are granted manually (see the
 # /admin/billing routes in app.py) once a payment with the matching
 # reference actually shows up. Takes priority over PayPal in
-# get_account_tier/checkout when configured, since it's the path that
-# actually works without ID verification.
+# get_account_tier/checkout when configured (since it's the path that
+# actually works without ID verification) -- but Stripe, if configured,
+# takes priority over this too. See STRIPE_CONFIGURED above.
 BANK_NAME = os.environ.get("BANK_NAME", "")
 BANK_ACCOUNT_NAME = os.environ.get("BANK_ACCOUNT_NAME", "")
 BANK_ACCOUNT_NUMBER = os.environ.get("BANK_ACCOUNT_NUMBER", "")

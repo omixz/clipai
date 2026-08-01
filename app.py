@@ -30,6 +30,7 @@ import config
 import crypto_lib
 import email_lib
 import pipeline_lib
+import stripe_lib
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("clipai")
@@ -42,12 +43,21 @@ JOBS_DIR = BASE_DIR / "jobs"
 # on Render where the whole disk is ephemeral anyway.
 USAGE_FILE = JOBS_DIR / "usage.json"
 API_KEYS_FILE = JOBS_DIR / "api_keys.json"
+# identity -> Stripe customer id, linked once Checkout completes (see
+# /confirm-checkout and /stripe/webhook below). Unlike PayPal, there's
+# nothing to link at checkout-creation time -- Stripe only creates the
+# customer during Checkout itself. Tier is never trusted from this file
+# alone -- get_account_tier always makes a live stripe_lib.get_subscription()
+# call with the id found here, so a cancelled subscription stops granting
+# Pro without depending on any webhook actually arriving.
+STRIPE_CUSTOMERS_FILE = JOBS_DIR / "stripe_customers.json"
 # identity -> PayPal subscription id, linked the moment checkout is created
 # (see billing_lib.create_subscription for why that's safe pre-approval).
 # Tier is never trusted from this file alone -- get_account_tier always
 # makes a live billing_lib.get_subscription() call with the id found here,
 # same "never trust local storage for Pro status" principle the Stripe
-# integration this replaced was built around.
+# integration this replaced (and, as of the STRIPE_CONFIGURED flag, may
+# once again outrank) was built around.
 PAYPAL_SUBS_FILE = JOBS_DIR / "paypal_subscriptions.json"
 # email -> tier ("pro" | "pro_plus"), set manually by an admin (see the
 # /admin/billing routes below) after a direct bank transfer payment shows
@@ -86,6 +96,8 @@ if not USAGE_FILE.exists():
     _atomic_write_text(USAGE_FILE, "{}")
 if not API_KEYS_FILE.exists():
     _atomic_write_text(API_KEYS_FILE, "{}")
+if not STRIPE_CUSTOMERS_FILE.exists():
+    _atomic_write_text(STRIPE_CUSTOMERS_FILE, "{}")
 if not PAYPAL_SUBS_FILE.exists():
     _atomic_write_text(PAYPAL_SUBS_FILE, "{}")
 if not MANUAL_GRANTS_FILE.exists():
@@ -93,9 +105,22 @@ if not MANUAL_GRANTS_FILE.exists():
 if not CRYPTO_PENDING_FILE.exists():
     _atomic_write_text(CRYPTO_PENDING_FILE, "{}")
 
+_stripe_customers_lock = threading.Lock()
 _paypal_subs_lock = threading.Lock()
 _manual_grants_lock = threading.Lock()
 _crypto_pending_lock = threading.Lock()
+
+
+def load_stripe_customers() -> dict:
+    with _stripe_customers_lock:
+        return json.loads(STRIPE_CUSTOMERS_FILE.read_text())
+
+
+def link_stripe_customer(identity: str, customer_id: str):
+    with _stripe_customers_lock:
+        data = json.loads(STRIPE_CUSTOMERS_FILE.read_text())
+        data[identity] = customer_id
+        _atomic_write_text(STRIPE_CUSTOMERS_FILE, json.dumps(data, indent=2))
 
 
 def record_crypto_pending(order_id: str, email: str, tier: str):
@@ -305,7 +330,8 @@ def compute_tier_and_source(identity: str, email: str | None) -> tuple[str, str 
     for the web/cookie path (get_account_tier_and_source below) and for
     keeping an API key's tier live instead of frozen at creation time (see
     refresh_api_key_tier). (tier, source) where source is 'admin' |
-    'manual' | 'crypto' | 'paypal' | None (None only when tier is 'free').
+    'manual' | 'crypto' | 'stripe' | 'paypal' | None (None only when tier
+    is 'free').
     Checked in order:
     1. Admin allowlist (config.ADMIN_EMAILS) -- always Pro Plus.
     2. Manual grants (MANUAL_GRANTS_FILE) -- an admin's hand-typed grant
@@ -313,10 +339,14 @@ def compute_tier_and_source(identity: str, email: str | None) -> tuple[str, str 
        webhook (see /crypto/webhook) -- either way, the one tier source
        here that's genuinely trusted from local storage rather than
        checked live, because there's nothing live to check it against.
-    3. PayPal (PAYPAL_SUBS_FILE) -- keyed off `identity`, always
-       double-checked live against billing_lib.get_subscription() so a
+    3. Stripe (STRIPE_CUSTOMERS_FILE) -- keyed off `identity`, always
+       double-checked live against stripe_lib.get_subscription() so a
        cancelled subscription stops granting Pro without depending on any
-       webhook actually arriving."""
+       webhook actually arriving. The primary/only path once
+       config.STRIPE_CONFIGURED is true, but checked regardless in case a
+       customer linked here predates Stripe being unconfigured again.
+    4. PayPal (PAYPAL_SUBS_FILE) -- same live-check pattern as Stripe
+       above, kept as a fallback source."""
     email = (email or "").lower()
     if config.ADMIN_EMAILS and email and email in config.ADMIN_EMAILS:
         return "pro_plus", "admin"
@@ -325,6 +355,12 @@ def compute_tier_and_source(identity: str, email: str | None) -> tuple[str, str 
         granted = load_manual_grants().get(email)
         if granted and granted.get("tier") in ("pro", "pro_plus"):
             return granted["tier"], granted.get("source", "manual")
+
+    customer_id = load_stripe_customers().get(identity)
+    if customer_id:
+        sub = stripe_lib.get_subscription(customer_id)
+        if sub and sub["status"] in stripe_lib.PAID_STATUSES:
+            return stripe_lib.tier_for_price(sub["price_id"]), "stripe"
 
     subscription_id = load_paypal_subs().get(identity)
     if subscription_id:
@@ -1177,6 +1213,10 @@ def _start_crypto_checkout(request: Request, email: str, tier: str):
 
 
 def _checkout_methods() -> list[str]:
+    # Stripe, once configured, is exclusive -- not one more option in a
+    # picker alongside bank/crypto/PayPal. See config.STRIPE_CONFIGURED.
+    if config.STRIPE_CONFIGURED:
+        return ["stripe"]
     methods = []
     if config.BANK_PAYMENT_CONFIGURED:
         methods.append("bank")
@@ -1205,7 +1245,34 @@ def _render_choose_payment_page(tier: str) -> str:
     )
 
 
+def _start_stripe_checkout(request: Request, tier: str):
+    identity = get_identity(request)
+    account = get_account(request)
+    email = account["email"] if account else None
+    price_id = config.STRIPE_PRICE_ID_PLUS if tier == "pro_plus" else config.STRIPE_PRICE_ID_PRO
+    try:
+        checkout_url = stripe_lib.create_checkout_session(
+            price_id, identity, email,
+            # Stripe substitutes the literal {CHECKOUT_SESSION_ID} token
+            # server-side -- it isn't Python interpolation, hence the
+            # doubled braces to keep it literal in this f-string.
+            success_url=f"{config.SITE_URL}/confirm-checkout?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{config.SITE_URL}/",
+        )
+    except Exception:
+        log.exception("stripe checkout session creation failed")
+        raise HTTPException(status_code=500, detail="Couldn't start checkout — billing isn't configured yet.")
+
+    resp = RedirectResponse(checkout_url, status_code=303)
+    set_session_cookie(resp, "clipai_cid", get_client_id(request), max_age=60 * 60 * 24 * 365)
+    return resp
+
+
 def _checkout_via(method: str, request: Request, tier: str, plan_id: str):
+    if method == "stripe" and config.STRIPE_CONFIGURED:
+        if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+            return RedirectResponse("/auth/google/login", status_code=303)
+        return _start_stripe_checkout(request, tier)
     if method == "bank" and config.BANK_PAYMENT_CONFIGURED:
         # The reference code is keyed by email, so an account is required
         # for this path regardless of GOOGLE_SIGNIN_CONFIGURED's normal
@@ -1256,7 +1323,10 @@ def create_checkout_session_plus(request: Request, method: str | None = None):
 @app.get("/billing-portal")
 def billing_portal(request: Request):
     """Where this sends someone depends entirely on *how* they're paying --
-    there's no single "billing portal" concept spanning both paths:
+    there's no single "billing portal" concept spanning every path:
+    - Stripe: a real self-serve portal, unlike PayPal below -- Stripe's API
+      returns a one-time link into a hosted page where the customer can
+      update payment methods, view invoices, or cancel.
     - PayPal: no per-subscription self-serve portal link the way Stripe /
       Lemon Squeezy had (no API returns one) -- the closest equivalent is
       PayPal's own automatic-payments management page under the
@@ -1268,6 +1338,18 @@ def billing_portal(request: Request):
       bank-transfer customer to PayPal's site here would be actively
       wrong, not just unhelpful, so this checks the tier source first."""
     _, source = get_account_tier_and_source(request)
+    if source == "stripe":
+        identity = get_identity(request)
+        customer_id = load_stripe_customers().get(identity)
+        if customer_id:
+            try:
+                portal_url = stripe_lib.create_billing_portal_session(
+                    customer_id, return_url=f"{config.SITE_URL}/settings"
+                )
+                return RedirectResponse(portal_url, status_code=303)
+            except Exception:
+                log.exception("stripe billing portal session creation failed")
+        return RedirectResponse(f"{config.SITE_URL}/", status_code=303)
     if source == "paypal":
         return RedirectResponse("https://www.paypal.com/myaccount/autopay/", status_code=303)
     if source == "manual":
@@ -1276,12 +1358,29 @@ def billing_portal(request: Request):
 
 
 @app.get("/confirm-checkout")
-def confirm_checkout(request: Request):
-    """PayPal redirects here right after the buyer approves the
-    subscription. The subscription id was already linked to `identity` at
-    creation time (see _start_paypal_checkout), but approval itself can lag
-    a moment behind the redirect, so this polls PayPal's live status
-    briefly rather than trusting anything in the redirect URL itself."""
+def confirm_checkout(request: Request, session_id: str | None = None):
+    """Stripe and PayPal both redirect back here after checkout,
+    distinguished by whether `session_id` is present -- Stripe always
+    includes it via the {CHECKOUT_SESSION_ID} placeholder in success_url
+    (see _start_stripe_checkout), PayPal's redirect carries no query params
+    at all. Both branches verify against the processor's own live API
+    rather than trusting anything else in the redirect URL."""
+    if session_id:
+        session = stripe_lib.get_checkout_session(session_id)
+        if session and session["customer_id"] and session["identity"]:
+            link_stripe_customer(session["identity"], session["customer_id"])
+            for _ in range(5):
+                sub = stripe_lib.get_subscription(session["customer_id"])
+                if sub and sub["status"] in stripe_lib.PAID_STATUSES:
+                    return RedirectResponse(f"{config.SITE_URL}/?upgraded=1", status_code=303)
+                time.sleep(1)
+        return RedirectResponse(f"{config.SITE_URL}/?upgrade_pending=1", status_code=303)
+
+    # PayPal redirects here right after the buyer approves the
+    # subscription. The subscription id was already linked to `identity` at
+    # creation time (see _start_paypal_checkout), but approval itself can
+    # lag a moment behind the redirect, so this polls PayPal's live status
+    # briefly rather than trusting anything in the redirect URL itself.
     identity = get_identity(request)
     subscription_id = load_paypal_subs().get(identity)
     if subscription_id:
@@ -1291,6 +1390,32 @@ def confirm_checkout(request: Request):
                 return RedirectResponse(f"{config.SITE_URL}/?upgraded=1", status_code=303)
             time.sleep(1)
     return RedirectResponse(f"{config.SITE_URL}/?upgrade_pending=1", status_code=303)
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    event = stripe_lib.verify_webhook_event(payload, sig_header)
+    if not event:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature.")
+
+    event_type = event["type"]
+    if event_type == "checkout.session.completed":
+        # Usually redundant with /confirm-checkout already linking the
+        # customer id -- this is the fallback for a customer who paid but
+        # never made it back to the browser tab (closed it, network blip),
+        # so tier detection still doesn't depend on this webhook firing.
+        session = event["data"]["object"]
+        identity = session.get("client_reference_id")
+        customer_id = session.get("customer")
+        if identity and customer_id:
+            link_stripe_customer(identity, customer_id)
+        log.info("stripe checkout.session.completed for customer %s", customer_id)
+    elif event_type == "customer.subscription.deleted":
+        log.info("stripe customer.subscription.deleted: %s", event["data"]["object"].get("id"))
+
+    return {"received": True}
 
 
 @app.post("/paypal/webhook")
