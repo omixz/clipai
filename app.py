@@ -229,8 +229,18 @@ def _worker():
         _set_job(job_id, status="processing", started_at=time.time())
         job_dir = JOBS_DIR / job_id
         try:
+            if "input_path" not in job:
+                # Defensive: a job record missing this key would otherwise
+                # raise KeyError here — and since the except blocks below
+                # used to read job["is_pro"]/job["identity"] too, that
+                # second KeyError went uncaught and killed this whole
+                # worker thread (it's a single infinite loop with no
+                # supervisor to restart it), silently breaking processing
+                # for every user until the process was restarted. Fail
+                # just this one job instead.
+                raise RuntimeError("internal error: job has no input file")
             result = pipeline_lib.process_video(
-                job["input_path"], str(job_dir), n_clips=3, watermark=not job["is_pro"],
+                job["input_path"], str(job_dir), n_clips=3, watermark=not job.get("is_pro", False),
                 dub_lang=job.get("dub_lang"), clip_format=job.get("clip_format", "vertical"),
                 caption_style=job.get("caption_style", "bold"),
             )
@@ -248,7 +258,7 @@ def _worker():
                 pass
             if job.get("notify_email"):
                 email_lib.send_done_email(
-                    job["notify_email"], [c["url"] for c in clips], result["duration"], job["is_pro"]
+                    job["notify_email"], [c["url"] for c in clips], result["duration"], job.get("is_pro", False)
                 )
         except ValueError as e:
             # e.g. dubbing requested on a non-English source video — a
@@ -256,7 +266,7 @@ def _worker():
             # actual reason rather than the generic message below.
             log.info("job %s rejected: %s", job_id, e)
             shutil.rmtree(job_dir, ignore_errors=True)
-            if not job["is_pro"]:
+            if not job.get("is_pro", True) and not job.get("api_key") and job.get("identity"):
                 refund_free_use(job["identity"])
             _set_job(job_id, status="failed", error=str(e), finished_at=time.time())
             if job.get("notify_email"):
@@ -264,7 +274,7 @@ def _worker():
         except Exception as e:
             log.exception("processing failed for job %s", job_id)
             shutil.rmtree(job_dir, ignore_errors=True)
-            if not job["is_pro"]:
+            if not job.get("is_pro", True) and not job.get("api_key") and job.get("identity"):
                 refund_free_use(job["identity"])
             error_str = str(e).lower()
             if "no speech" in error_str or "no usable" in error_str:
@@ -783,6 +793,14 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
     if clip_format not in ("vertical", "square", "horizontal"):
         raise HTTPException(status_code=400, detail="clip_format must be 'vertical', 'square', or 'horizontal'.")
 
+    # Build our own filename from a validated extension rather than trusting
+    # the client-supplied filename directly — using file.filename verbatim
+    # (as this endpoint used to) lets a name like "../../../whatever" write
+    # outside job_dir.
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in config.ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'. Use MP4, MOV, M4V, WEBM, or MKV.")
+
     if file.size and file.size > config.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"Video too large (max {config.MAX_UPLOAD_MB}MB).")
 
@@ -790,15 +808,27 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    video_path = job_dir / file.filename
+    video_path = job_dir / f"input{ext}"
+    size = 0
+    max_bytes = config.MAX_UPLOAD_MB * 1024 * 1024
     with open(video_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                shutil.rmtree(job_dir, ignore_errors=True)
+                raise HTTPException(status_code=413, detail=f"File too large — the limit is {config.MAX_UPLOAD_MB}MB.")
+            f.write(chunk)
 
-    _set_job(job_id, status="queued", api_key=True, clip_format=clip_format)
+    # These fields are required by the worker thread (see _worker) — a job
+    # record missing any of them used to raise an uncaught KeyError that
+    # crashed the single background worker permanently.
+    _set_job(job_id, status="queued", api_key=True, clip_format=clip_format,
+             input_path=str(video_path), identity=key_info["identity"],
+             is_pro=key_info.get("tier") in ("pro", "pro_plus"))
     try:
         _job_queue.put_nowait(job_id)
     except queue.Full:
+        shutil.rmtree(job_dir, ignore_errors=True)
         _set_job(job_id, status="error", error="Server queue full, please try again shortly.")
         raise HTTPException(status_code=503, detail="Server queue full, please try again shortly.")
 
@@ -807,19 +837,25 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
 
 @app.get("/api/v1/clips/{job_id}")
 def api_get_clips(job_id: str, request: Request):
-    """Get clip results from a completed job. Requires API key or job cookie."""
+    """Get clip results from a completed job. Requires an API key or the
+    session that submitted the job — the requester's identity is compared
+    against the job's owner (see /process and /api/v1/process, which both
+    now record "identity" on the job) so job_id alone isn't enough to read
+    someone else's results."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         api_key = auth_header[7:]
         key_info = get_api_key_info(api_key)
         if not key_info or not key_info.get("active"):
             raise HTTPException(status_code=401, detail="Invalid API key.")
+        requester_identity = key_info["identity"]
     else:
-        # Allow access if cookie was set during job submission
-        pass
+        requester_identity = get_identity(request)
 
     job = _get_job(job_id)
     if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.get("identity") != requester_identity:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     if job["status"] == "processing":

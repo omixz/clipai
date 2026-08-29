@@ -670,7 +670,6 @@
         <a href="/jobs/${jobId}/download/all" class="download" style="white-space:nowrap">📦 Download All as ZIP</a>
       </div>` : '';
       clipsEl.innerHTML = header + clips.map((c, idx) => {
-        const shareText = `"${c.text}"\n\n#shorts #reels #fyp #viral`;
         return `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
@@ -680,13 +679,25 @@
             <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
             <div class="actions">
               <a class="download" href="${encodeURI(c.url)}" download>Download</a>
-              <button class="share-btn" onclick="copyToClipboard('${shareText.replace(/'/g, "\\'")}', this)">Share</button>
+              <button class="share-btn" data-clip-index="${idx}">Share</button>
               <a class="download" href="https://tiktok.com/upload" target="_blank" style="background:var(--accent);flex:1;text-align:center;text-decoration:none">TikTok ↗</a>
             </div>
           </div>
         </div>
       `;
       }).join('');
+      // Wired up here rather than via an inline onclick="...${c.text}..." —
+      // clip text comes from Whisper's transcript of the uploaded video, so
+      // a spoken line containing a double-quote or backslash could break
+      // out of an inline attribute and run arbitrary JS. Keeping the text
+      // in JS memory (never serialized into HTML/attribute strings) avoids
+      // that class of injection entirely.
+      clipsEl.querySelectorAll('.share-btn').forEach(btn => {
+        const c = clips[Number(btn.dataset.clipIndex)];
+        btn.addEventListener('click', () => {
+          copyToClipboard(`"${c.text}"\n\n#shorts #reels #fyp #viral`, btn);
+        });
+      });
     }
 
     const params = new URLSearchParams(location.search);
