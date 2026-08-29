@@ -376,6 +376,22 @@ def usage(request: Request):
 
 
 def get_request_ip(request: Request) -> str:
+    """Best-effort real client IP for rate limiting.
+
+    Traffic to this app goes through Cloudflare -> Render -> app. Cloudflare
+    sets CF-Connecting-IP itself at its edge (not client-settable through
+    Cloudflare), so it's preferred when present. Falls back to
+    X-Forwarded-For, which Render's edge sets but which is still just a
+    header - if this app's raw onrender.com URL is ever reachable directly
+    (bypassing Cloudflare), a client can hit that URL and set either header
+    to whatever it wants. This function can't detect that bypass from
+    inside the app; if it matters, restrict origin traffic to Cloudflare
+    (Cloudflare Authenticated Origin Pulls, or Render's allow-listing) so
+    the origin is unreachable except through Cloudflare.
+    """
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
