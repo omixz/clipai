@@ -80,11 +80,11 @@ def _atempo_chain(factor: float) -> str:
     return ",".join(filters)
 
 
-def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True):
-    """Same visual pipeline as pipeline_lib.render_clip (vertical crop,
-    burned captions, watermark) but with the audio track replaced by
-    translated, synthesized speech time-stretched to fit the clip, and
-    captions burned from the translated text instead of the original."""
+def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True, clip_format="vertical", caption_style="bold"):
+    """Same visual pipeline as pipeline_lib.render_clip (crop, burned
+    captions, watermark) but with the audio track replaced by translated,
+    synthesized speech time-stretched to fit the clip, and captions burned
+    from the translated text instead of the original."""
     translated = translate_text(seg["text"], target_lang, source_lang)
     virality = seg.get("virality_score", 0)
 
@@ -121,12 +121,25 @@ def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang=
     with open(srt_path, "w") as f:
         f.write("\n".join(lines))
 
-    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.mp4")
+    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_{clip_format}.mp4")
+    if clip_format == "square":
+        scale_pad = "scale=1080:-2,pad=1080:1080:(1080-w)/2:(1080-h)/2:color=0x1a1a2e"
+    elif clip_format == "horizontal":
+        scale_pad = "scale=1920:-2,pad=1920:1080:(1920-w)/2:(1080-h)/2:color=0x1a1a2e"
+    else:  # vertical (9:16)
+        scale_pad = "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e"
+
+    caption_styles = {
+        "bold": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,Bold=1,Alignment=2,MarginV=140",
+        "outline": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=4,Bold=0,Alignment=2,MarginV=140",
+        "subtle": "FontName=DejaVu Sans,FontSize=28,PrimaryColour=&HB8B8B8,OutlineColour=&H000000,BorderStyle=1,Outline=1,Bold=0,Alignment=2,MarginV=140",
+        "neon": "FontName=DejaVu Sans,FontSize=32,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Bold=1,Alignment=2,MarginV=140,BackColour=&H00000080",
+    }
+    caption_style_str = caption_styles.get(caption_style, caption_styles["bold"])
+
     vf = (
-        "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e,"
-        f"subtitles={srt_path}:force_style='FontName=DejaVu Sans,FontSize=30,"
-        "PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,"
-        "Bold=1,Alignment=2,MarginV=140'"
+        f"{scale_pad},"
+        f"subtitles={srt_path}:force_style='{caption_style_str}'"
     )
     if watermark:
         vf += (

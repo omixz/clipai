@@ -206,7 +206,8 @@ def process_video(video_path, out_dir, n_clips=3, watermark=True, dub_lang=None,
         if dub_lang:
             import dub_lib
             out_path, translated_text, ok, err = dub_lib.render_dubbed_clip(
-                video_path, seg, out_dir, i, dub_lang, source_lang=source_lang, watermark=watermark
+                video_path, seg, out_dir, i, dub_lang, source_lang=source_lang, watermark=watermark,
+                clip_format=clip_format, caption_style=caption_style,
             )
             text = translated_text
         else:
