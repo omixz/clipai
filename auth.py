@@ -3,6 +3,7 @@ transitive dep via stripe/huggingface_hub) for the OAuth HTTP calls, PyJWT for
 verifying Google's signed ID token, itsdangerous for signing our own account
 cookie so it can't be forged client-side."""
 import logging
+import re
 import secrets
 import time
 
@@ -23,6 +24,8 @@ ACCOUNT_MAX_AGE = 60 * 60 * 24 * 365
 _discovery_cache = {"data": None, "at": 0.0}
 _jwks_client = None
 _serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-account-v1")
+_customer_serializer = URLSafeTimedSerializer(config.SESSION_SECRET_KEY, salt="clipai-customer-v1")
+CUSTOMER_COOKIE = "clipai_customer"
 
 
 def _discovery():
@@ -97,3 +100,22 @@ def read_account_cookie(token: str) -> dict | None:
     except Exception:
         log.exception("failed to parse account cookie")
         return None
+
+
+def sign_customer_cookie(customer_id: str) -> str:
+    return _customer_serializer.dumps(customer_id)
+
+
+def read_customer_cookie(token: str) -> str | None:
+    """Signed Stripe customer id. Older deploys stored the raw `cus_...` id
+    unsigned; those are still accepted (ids are unguessable) and get
+    re-issued signed by the app on the next /usage call."""
+    if not token:
+        return None
+    if re.fullmatch(r"cus_[A-Za-z0-9]{6,64}", token):
+        return token
+    try:
+        value = _customer_serializer.loads(token, max_age=ACCOUNT_MAX_AGE)
+    except Exception:
+        return None
+    return value if isinstance(value, str) and value.startswith("cus_") else None

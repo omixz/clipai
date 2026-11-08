@@ -1,0 +1,115 @@
+name: Marketing autopilot
+
+# Makes one minimal reel and posts it to TikTok + Instagram (via Buffer),
+# twice a day, with no one involved. State (what was posted) is committed back
+# to autopilot/state/ so it never repeats itself across runs.
+#
+# Needs one repo secret: BUFFER_API_KEY (channels are found automatically).
+# Optional: GEMINI_API_KEY (fresh lines once the built-in bank is used up),
+# BUFFER_TIKTOK_CHANNEL_ID / BUFFER_INSTAGRAM_CHANNEL_ID (to pick specific
+# channels), and the repo *variable* TIKTOK_TREND_HANDOFF=1 (TikTok posts come
+# to your phone so you can add a trending sound). Run "Marketing setup check" first.
+on:
+  schedule:
+    # ~11:17 and ~19:43 US Eastern, two strong windows for short-form video
+    - cron: "17 15 * * *"
+    - cron: "43 23 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render only — don't post"
+        type: boolean
+        default: false
+      motif:
+        description: "Force a motif"
+        type: choice
+        default: auto
+        options: [auto, growth, sentence, cut, waveform, split, credits, computer]
+      platforms:
+        description: "Where to post"
+        type: choice
+        default: "tiktok,instagram"
+        options: ["tiktok,instagram", "tiktok", "instagram"]
+      force:
+        description: "Post even if the last post was under 3 hours ago"
+        type: boolean
+        default: false
+      trend_handoff:
+        description: "TikTok: send to my phone so I can add a trending sound"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: marketing-autopilot
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ffmpeg, Playwright + Chromium
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          npm install --prefix autopilot --no-audit --no-fund
+          npx --prefix autopilot playwright install --with-deps chromium
+          pip install requests numpy
+
+      - name: Make and post a reel
+        id: run
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_TIKTOK_CHANNEL_ID: ${{ secrets.BUFFER_TIKTOK_CHANNEL_ID }}
+          BUFFER_INSTAGRAM_CHANNEL_ID: ${{ secrets.BUFFER_INSTAGRAM_CHANNEL_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TIKTOK_TREND_HANDOFF: ${{ (inputs.trend_handoff || vars.TIKTOK_TREND_HANDOFF == '1') && '1' || '0' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          if [ -n "${{ inputs.motif }}" ] && [ "${{ inputs.motif }}" != "auto" ]; then ARGS="$ARGS --motif ${{ inputs.motif }}"; fi
+          python -m autopilot.run --platforms "${{ inputs.platforms || 'tiktok,instagram' }}" $ARGS
+
+      - name: Keep the video + contact sheet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reel-${{ github.run_id }}
+          path: autopilot/out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Save state (what was posted)
+        if: always() && inputs.dry_run != true
+        run: |
+          git config user.name "peakcut-autopilot"
+          git config user.email "autopilot@users.noreply.github.com"
+          git add autopilot/state/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "autopilot: record post [skip ci]"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 5; done
+
+      - name: Open an issue if posting failed
+        if: failure() && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue list --label autopilot --state open --json number --jq '.[0].number' > n.txt || true
+          BODY="Marketing autopilot run failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Open the run summary for the reason; the most common fixes are an expired Buffer key or a disconnected TikTok/Instagram channel in Buffer."
+          if [ -s n.txt ]; then gh issue comment "$(cat n.txt)" --body "$BODY"
+          else gh label create autopilot --color 7048e8 2>/dev/null || true; gh issue create --title "Marketing autopilot needs attention" --label autopilot --body "$BODY"; fi

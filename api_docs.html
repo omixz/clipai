@@ -78,8 +78,8 @@
       <div class="code-block">
         <pre>Authorization: Bearer pk_your_api_key_here</pre>
       </div>
-      <p><strong>Generate your first API key:</strong> Sign in to Peakcut and go to API settings (link in your account menu).</p>
-      <p><strong>Pricing:</strong> Free ($0/mo, 100 calls/month), Pro ($15/mo, 500 calls/month), or Pro Plus ($29/mo, 2000 calls/month).</p>
+      <p><strong>Generate your first API key:</strong> sign in to Peakcut and open <a href="/settings">Settings → API Keys</a>. Keys are shown once — store them securely. You can have up to 5 active keys and revoke any of them instantly.</p>
+      <p><strong>Limits:</strong> your API tier follows your subscription — Free 10 videos/month (watermarked), Pro 500, Pro Plus 2000 — counted per account across all your keys and reset on the 1st (UTC). Max 30 submissions per hour. Clips are deleted 24 hours after a job finishes.</p>
     </div>
 
     <div class="section">
@@ -101,12 +101,20 @@
             <div class="param-type">string (optional, default: "vertical")</div>
             <p>Output format: <code>vertical</code> (9:16), <code>square</code> (1:1), or <code>horizontal</code> (16:9).</p>
           </div>
+          <div class="param"><div class="param-name">layout</div><div class="param-type">string (optional, default: "crop")</div>
+            <p><code>crop</code> fills the frame, <code>blur</code> shows the whole picture over a blurred fill, <code>fit</code> letterboxes.</p></div>
+          <div class="param"><div class="param-name">clip_length</div><div class="param-type">string (optional, default: "medium")</div>
+            <p><code>short</code> (12–30s), <code>medium</code> (25–60s) or <code>long</code> (45–90s). Clips always start and end on sentence boundaries.</p></div>
+          <div class="param"><div class="param-name">caption_style</div><div class="param-type">string (optional, default: "bold")</div>
+            <p><code>bold</code>, <code>boxed</code>, <code>neon</code>, <code>outline</code> or <code>subtle</code>.</p></div>
+          <div class="param"><div class="param-name">n_clips</div><div class="param-type">integer (optional, default: 3)</div>
+            <p>Clips to return — capped at 3 (Free), 5 (Pro) or 8 (Pro Plus).</p></div>
         </div>
 
         <div class="response">
           <h4>Response (200)</h4>
           <div class="code-block"><pre>{
-  "job_id": "abc12345",
+  "job_id": "3f9a1c2b7d4e8f60",
   "status": "queued"
 }</pre></div>
           <p>Use the <code>job_id</code> to poll for results with <code>GET /api/v1/clips/{job_id}</code>.</p>
@@ -127,11 +135,11 @@
         </div>
 
         <div class="response">
-          <h4>Response (200, processing)</h4>
-          <div class="code-block"><pre>{
-  "status": "processing",
-  "progress": 45
-}</pre></div>
+          <h4>Response (200, queued / processing)</h4>
+          <div class="code-block"><pre>{"status": "queued", "queue_position": 2}
+{"status": "processing", "stage": "rendering", "progress": 62}</pre></div>
+          <h4>Response (200, failed)</h4>
+          <div class="code-block"><pre>{"status": "error", "error": "No clear speech detected. ..."}</pre></div>
           <h4>Response (200, done)</h4>
           <div class="code-block"><pre>{
   "status": "done",
@@ -139,8 +147,13 @@
     {
       "rank": 1,
       "text": "This is the best moment from your video",
+      "title": "This is the best moment from your video",
+      "hashtags": ["#podcast", "#startup", "#shorts", "#fyp"],
+      "start": 132.4,
+      "end": 171.9,
       "virality_score": 87,
-      "download_url": "https://clipai-tgnv.onrender.com/jobs/abc12345/peakcut_rank1_v87_vertical.mp4"
+      "srt_url": "__SITE_URL__/jobs/3f9a1c2b7d4e8f60/peakcut_rank1_v87.srt",
+      "download_url": "__SITE_URL__/jobs/3f9a1c2b7d4e8f60/peakcut_rank1_v87_vertical.mp4?download=1"
     }
   ]
 }</pre></div>
@@ -152,15 +165,15 @@
       <h2>Example: cURL</h2>
       <div class="code-block"><pre>
 # Submit a video
-curl -X POST https://clipai-tgnv.onrender.com/api/v1/process \
+curl -X POST __SITE_URL__/api/v1/process \
   -H "Authorization: Bearer pk_your_api_key_here" \
   -F "file=@video.mp4" \
   -F "clip_format=vertical"
 
-# Response: {"job_id": "abc12345", "status": "queued"}
+# Response: {"job_id": "3f9a1c2b7d4e8f60", "status": "queued"}
 
 # Poll for results (repeat until status is "done")
-curl https://clipai-tgnv.onrender.com/api/v1/clips/abc12345 \
+curl __SITE_URL__/api/v1/clips/3f9a1c2b7d4e8f60 \
   -H "Authorization: Bearer pk_your_api_key_here"
       </pre></div>
     </div>
@@ -172,7 +185,7 @@ import requests
 import time
 
 API_KEY = "pk_your_api_key_here"
-BASE_URL = "https://clipai-tgnv.onrender.com"
+BASE_URL = "__SITE_URL__"
 
 # Submit video
 with open("video.mp4", "rb") as f:
@@ -237,7 +250,7 @@ while True:
     <div class="section">
       <h2>Error Handling</h2>
       <p><strong>401 Unauthorized:</strong> Invalid or missing API key. Check your <code>Authorization</code> header.</p>
-      <p><strong>429 Too Many Requests:</strong> You've exceeded your monthly API call limit for your tier.</p>
+      <p><strong>429 Too Many Requests:</strong> You've hit your monthly video limit or the 30-per-hour submission cap. Check the <code>Retry-After</code> header.</p>
       <p><strong>413 Payload Too Large:</strong> Video file exceeds 300MB. Try a shorter clip.</p>
       <p><strong>400 Bad Request:</strong> Invalid parameters (e.g., unsupported clip_format).</p>
       <p><strong>503 Service Unavailable:</strong> Server queue is full. Wait a few moments and retry.</p>

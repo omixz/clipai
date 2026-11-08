@@ -1,0 +1,7 @@
+.git
+autopilot/node_modules
+autopilot/out
+jobs
+__pycache__
+.pytest_cache
+tests

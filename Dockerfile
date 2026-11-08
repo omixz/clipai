@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
+    ffmpeg fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN mkdir -p jobs && echo '{}' > usage.json
+
+# Cap thread fan-out so ffmpeg/ctranslate2 don't thrash a 1-vCPU free instance.
+ENV OMP_NUM_THREADS=2
 
 # "tiny" keeps memory usage low enough for free-tier hosts (512MB) — "small" OOMs there.
 # Override with WHISPER_MODEL=small env var on a host with more RAM for better accuracy.
@@ -35,4 +38,6 @@ RUN mkdir -p /app/voices && \
     python3 -m piper.download_voices --download-dir /app/voices pt_BR-faber-medium
 
 EXPOSE 8000
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=60s --timeout=5s --start-period=60s CMD python3 -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')" || exit 1
+# --proxy-headers so request.url.scheme / client IP reflect the real client behind Render/Caddy.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

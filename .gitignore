@@ -4,3 +4,9 @@ api_keys.json
 __pycache__/
 *.pyc
 .env
+*.tmp
+autopilot/node_modules/
+autopilot/out/
+buffer_report.md
+probe.mp4
+.pytest_cache/

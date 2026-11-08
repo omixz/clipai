@@ -1,7 +1,7 @@
 # Peakcut
 
-Free AI video clipper: upload a video, get back the top 3 auto-picked, auto-captioned
-short clips. No paid APIs — self-hosted Whisper for transcription, ffmpeg for rendering,
+Free AI video clipper: upload a video, get back the best auto-picked, auto-captioned
+short clips — cut on full sentences and reframed for TikTok/Reels/Shorts. No paid APIs — self-hosted Whisper for transcription, ffmpeg for rendering,
 a rule-based (audio loudness + speech pattern) scorer for picking highlights.
 
 Verified working end-to-end, including as a built Docker image run in a clean
@@ -15,7 +15,7 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Needs `ffmpeg` installed on the system (`apt-get install ffmpeg` / `brew install ffmpeg`).
+Needs `ffmpeg` (5.0+) installed on the system (`apt-get install ffmpeg` / `brew install ffmpeg`).
 Open http://localhost:8000
 
 ## Run with Docker
@@ -30,18 +30,54 @@ first real request isn't stuck downloading a ~250MB model.
 
 ## How it works
 
-1. `POST /process` accepts a video upload, reserves the free-tier quota, and returns a job id instantly; a single background worker processes jobs one at a time (two concurrent Whisper+ffmpeg runs would OOM a 512MB instance) while the front-end polls `GET /job/{id}` for queued/processing/done/failed. The site stays fully responsive during the minutes-long processing and long uploads can't die at a gateway timeout.
-2. `pipeline_lib.transcribe()` runs self-hosted faster-whisper (small model, CPU, int8) — no API key, no per-minute cost.
-3. `score_candidates()` scores every transcript segment by real audio loudness (`ffmpeg astats`) plus cheap text signals (punctuation, contrast words, punchy short words) — no LLM call.
-4. `pick_top_n()` selects the top 3 non-overlapping segments.
-5. `render_clip()` cuts each segment, converts to vertical 1080x1920, burns in short punchy word-chunk captions (timed to actual speech via Whisper's word-level timestamps) plus a watermark (free plan only).
+1. `POST /process` validates options, reserves one video from the caller's monthly allowance and returns a job id instantly. A single background worker processes jobs one at a time from a **priority queue** (paid plans first; two concurrent Whisper+ffmpeg runs would OOM a 512MB instance). The front-end polls `GET /job/{id}`, which reports the real stage (`transcribing` → `finding_moments` → `rendering`) and queue position. Failed jobs are refunded automatically.
+2. `pipeline_lib.transcribe()` runs self-hosted faster-whisper (CPU, int8, VAD filter on to skip silence) — no API key, no per-minute cost.
+3. `loudness_timeline()` measures audio loudness for the whole file in **one ffmpeg pass** (previously one ffmpeg process per segment).
+4. `score_candidates()` builds **sentence-aware windows**: runs of consecutive segments that start and end on a sentence boundary or natural pause, sized by the chosen clip length (short 12–30s, medium 25–60s, long 45–90s). Each window is scored on loudness, text signals, a hook bonus for strong openers (questions, numbers, "here's why…"), completeness and speaking pace.
+5. `pick_top_n()` selects the best non-overlapping windows (3 / 5 / 8 per plan).
+6. `render_segment()` cuts each window (padded so no word is clipped), reframes it (`crop` fill, `blur` show-everything, or `fit` letterbox), burns in word-timed captions (filler words removed) and the watermark on the free plan. Each clip also gets an editable `.srt`, a suggested title and hashtags. "Download all" returns a ZIP with clips, captions and `clips.json`.
 
-## Free tier, Pro plan, and ads
+Uploads are deleted as soon as clips are rendered; clips are deleted after 24 hours. Job ids are 64-bit random, job status/ZIP endpoints are owner-only, and only finished `.mp4`/`.srt` files are ever served.
 
-- `config.py` holds every setting you need to fill in — Stripe keys, AdSense publisher ID, free-plan limit, max upload size. Every placeholder is marked `REPLACE_ME` / `REPLACE-ME`.
-- Free users are capped at `FREE_LIMIT` (default 1) video. Once Google Sign-In is configured (see below), usage is tracked per Google account (`acct:{sub}`); until then it falls back to a per-browser cookie (`clipai_cid`), which is fine for an MVP but not abuse-proof since clearing cookies resets the counter. Either way the counter lives in `usage.json`, which gets wiped on every redeploy/spin-down on a host with no persistent disk (Render's free tier included) — low stakes for a free counter.
-- **Pro status is deliberately NOT stored in that same file.** The "Upgrade to Pro" button hits `/create-checkout-session` → Stripe Checkout → `/confirm-checkout`, which verifies the session server-side and stores the Stripe customer ID in a cookie (`clipai_customer`). From then on, every request checks that customer's subscription status live against Stripe's API (`check_pro_status` in `app.py`) instead of trusting a local flag. This matters because a local flag would get wiped by the same disk-persistence issue above — and unlike the free counter, losing a paying customer's access on every restart is a real problem, not a minor one. `/stripe/webhook` is still wired up for logging, but Pro access no longer depends on it firing.
-- The free-tier ad slot in `index.html` is a placeholder until AdSense approves the site and you paste in your publisher ID.
+## Process on your own hardware
+
+Users can make clips on their own computer instead of the shared server. It's a **premium feature**: included with Pro and Pro Plus, or sold on its own as an add-on (set `STRIPE_PRICE_ID_HARDWARE` to a recurring Stripe price; pricing.html says $5/mo). Free users see it locked with an upsell, and pairing or "My computer" uploads return 402.
+
+1. **Settings → Your computers → Pair a computer** issues a device token (stored hashed, max 3 per user). The page shows the exact command to run.
+2. On that computer: download `/worker/bundle.zip` (or clone this repo), `pip install -r requirements-worker.txt`, then
+   `python peakcut_worker.py --server https://your-site --token pd_…`. It polls `/worker/claim` and processes that user's **My computer** uploads locally.
+   - Whisper runs on CUDA automatically, using the `small` model on GPU and `base` on CPU.
+   - Rendering uses NVENC, Quick Sync, VideoToolbox or AMF when ffmpeg supports them.
+   - Finished clips are uploaded to `/worker/jobs/{id}/result` and re-validated server-side.
+3. Jobs processed on your own computer **don't use the monthly allowance**. They're capped at `OWN_DEVICE_DAILY_LIMIT` per day (default 30) to bound storage, and can request up to 8 clips.
+4. **Leases.** A worker holds a 3-minute lease that its heartbeat extends. If it disappears, the job goes back in the queue, and after 3 lost leases it fails with a refund.
+5. **Offline.** `python peakcut_worker.py --local video.mp4 --out clips/` works fully offline, with no account.
+
+**Owner capacity.** Set `WORKER_TOKEN` and run the same worker with that token on your own GPU box to drain the *cloud* queue. With `LOCAL_WORKER_ENABLED=0`, the 512MB host becomes a pure web front and all processing happens on your hardware.
+
+## Auto-posting with Buffer
+
+Each clip has an **🗓 Auto-post** button. It saves the clip, copies the title and hashtags, and opens Buffer, which schedules to TikTok, Reels and Shorts. Settings has an Auto-posting section too. Set `BUFFER_URL` to your Buffer affiliate link to earn from referrals.
+
+## Marketing autopilot (TikTok + Instagram)
+
+`autopilot/` renders a minimal black-and-white reel and posts it to TikTok and Instagram twice a day through Buffer, entirely from GitHub Actions (`.github/workflows/marketing.yml`). See [`autopilot/README.md`](autopilot/README.md) for the 10-minute setup.
+
+## Plans, limits and ads
+
+| | Free | Pro ($15) | Pro Plus ($29) |
+|---|---|---|---|
+| Videos / month (`FREE_LIMIT`, `PRO_LIMIT`, `PRO_PLUS_LIMIT`) | 5 | 20 | 50 |
+| Clips per video (`config.MAX_CLIPS`) | 3 | 5 | 8 |
+| Watermark | "Made with Peakcut" | none | optional custom text |
+| Dubbing / priority queue | – | ✓ | ✓ |
+| API videos / month (`config.API_LIMITS`) | 10 | 500 | 2000 |
+
+- Allowances reset on the 1st of each month (UTC). Counters live in `usage.json` — wiped on redeploy on disk-less hosts, which is low stakes (it can only give people *more* videos).
+- **Plan status is never stored locally.** After Stripe Checkout, `/confirm-checkout` verifies the session server-side and sets a *signed* `clipai_customer` cookie. Every check then asks Stripe for the customer's subscriptions (cached 60s; `active`, `trialing` and `past_due` count; the price id decides Pro vs Pro Plus). Signed-in users without the cookie are matched by email, so a subscriber gets their plan back on a new device just by signing in. Webhooks invalidate the cache.
+- Already-subscribed users who click upgrade are sent to the billing portal instead of creating a second subscription. Checkout accepts promotion codes (create them in Stripe for launch campaigns).
+- API keys need Google sign-in configured (otherwise identity is a resettable cookie). Keys are stored as SHA-256 hashes, max 5 per user, revocable, and usage is counted per user per month across all keys.
+- The free-tier ad slot uses AdSense once approved.
 
 ### One-time setup to actually take payments and show ads
 
@@ -51,7 +87,7 @@ first real request isn't stuck downloading a ~250MB model.
 
 ## Sign in with Google
 
-- This is a **soft requirement**, same pattern as Stripe/AdSense above: while `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are still the `REPLACE_ME` placeholders, the site works exactly as before (anonymous, cookie-tracked, 1 free video). The moment real credentials are supplied, `config.GOOGLE_SIGNIN_CONFIGURED` flips to `True` and two things change: `/process` requires a signed-in Google account, and the free-tier counter switches from per-browser-cookie to per-Google-account (`acct:{sub}`) — closing the "clear your cookies for another free video" loophole, the same way OpusClip/Vidyo.ai gate their free tiers.
+- This is a **soft requirement**, same pattern as Stripe/AdSense above: while `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are still the `REPLACE_ME` placeholders, the site works exactly as before (anonymous, cookie-tracked, `FREE_LIMIT` videos/month). The moment real credentials are supplied, `config.GOOGLE_SIGNIN_CONFIGURED` flips to `True` and two things change: `/process` requires a signed-in Google account, and the free-tier counter switches from per-browser-cookie to per-Google-account (`acct:{sub}`) — closing the "clear your cookies for another free video" loophole, the same way OpusClip/Vidyo.ai gate their free tiers.
 - The OAuth flow is hand-rolled (`auth.py`) with `httpx` + `PyJWT` rather than `authlib`, to avoid a `cryptography` version conflict with the Debian-managed OS package. It fetches Google's discovery document and JWKS live, and verifies the ID token's signature before trusting any claim.
 - "Verification" is Google's own `email_verified` claim on the ID token — sign-in is rejected (redirect to `?auth_error=unverified`) if Google reports the email as unverified. This avoids needing a separate email/SMTP-based OTP system.
 - The account cookie (`clipai_account`) is signed with `itsdangerous` using `SESSION_SECRET_KEY`, so it can't be forged or edited client-side.

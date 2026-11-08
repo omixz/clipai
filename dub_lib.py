@@ -80,80 +80,48 @@ def _atempo_chain(factor: float) -> str:
     return ",".join(filters)
 
 
-def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True, clip_format="vertical", caption_style="bold"):
-    """Same visual pipeline as pipeline_lib.render_clip (crop, burned
-    captions, watermark) but with the audio track replaced by translated,
+def render_dubbed_clip(video_path, seg, out_dir, rank, target_lang, source_lang="en", watermark=True,
+                       clip_format="vertical", caption_style="bold", layout="crop", watermark_text=None,
+                       watermark_color=None, duration=None):
+    """Same visual pipeline as pipeline_lib.render_clip (reframe, burned
+    captions, watermark) but with the audio replaced by translated,
     synthesized speech time-stretched to fit the clip, and captions burned
-    from the translated text instead of the original."""
+    from the translated text."""
+    start, end = pipeline_lib.clip_bounds(seg, duration)
     translated = translate_text(seg["text"], target_lang, source_lang)
     virality = seg.get("virality_score", 0)
+    stem = f"peakcut_rank{rank}_v{virality}"
 
-    raw_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub_raw.wav")
+    raw_wav = os.path.join(out_dir, f"{stem}_dub_raw.wav")
     synthesize_speech(translated, target_lang, raw_wav)
 
-    clip_duration = max(0.1, seg["end"] - seg["start"])
+    clip_duration = max(0.1, end - start)
     tts_duration = _wav_duration(raw_wav)
     tempo_filter = _atempo_chain(tts_duration / clip_duration)
 
-    stretched_wav = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_dub.wav")
-    subprocess.run(
+    stretched_wav = os.path.join(out_dir, f"{stem}_dub.wav")
+    stretch = subprocess.run(
         ["ffmpeg", "-y", "-i", raw_wav, "-af", tempo_filter, stretched_wav],
         capture_output=True, text=True,
     )
     os.unlink(raw_wav)
+    out_path = os.path.join(out_dir, f"{stem}_{clip_format}.mp4")
+    if stretch.returncode != 0:
+        return out_path, translated, False, stretch.stderr[-800:]
 
-    # Even-spaced pseudo word-chunk captions across the clip's duration —
-    # Piper doesn't give us per-word timestamps the way Whisper does for the
-    # original-language captions, so this is a linear approximation rather
-    # than a true forced alignment.
-    srt_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}.srt")
-    words = translated.split()
-    chunk_size = 3
-    lines, idx = [], 1
-    n_chunks = max(1, (len(words) + chunk_size - 1) // chunk_size)
-    for i in range(0, len(words), chunk_size):
-        chunk = words[i:i + chunk_size]
-        chunk_idx = i // chunk_size
-        start = clip_duration * chunk_idx / n_chunks
-        end = clip_duration * (chunk_idx + 1) / n_chunks
-        lines.append(f"{idx}\n{pipeline_lib.srt_timestamp(start)} --> {pipeline_lib.srt_timestamp(end)}\n{' '.join(chunk)}\n")
-        idx += 1
+    # Piper gives no per-word timestamps, so captions are spaced evenly
+    # across the clip — an approximation, not a forced alignment.
+    srt_path = os.path.join(out_dir, f"{stem}.srt")
     with open(srt_path, "w") as f:
-        f.write("\n".join(lines))
+        f.write(pipeline_lib.build_even_srt(translated, clip_duration))
 
-    out_path = os.path.join(out_dir, f"peakcut_rank{rank}_v{virality}_{clip_format}.mp4")
-    if clip_format == "square":
-        scale_pad = "scale=1080:-2,pad=1080:1080:(1080-w)/2:(1080-h)/2:color=0x1a1a2e"
-    elif clip_format == "horizontal":
-        scale_pad = "scale=1920:-2,pad=1920:1080:(1920-w)/2:(1080-h)/2:color=0x1a1a2e"
-    else:  # vertical (9:16)
-        scale_pad = "scale=1080:-2,pad=1080:1920:0:(1920-ih)/2:color=0x1a1a2e"
-
-    caption_styles = {
-        "bold": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,Bold=1,Alignment=2,MarginV=140",
-        "outline": "FontName=DejaVu Sans,FontSize=30,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=4,Bold=0,Alignment=2,MarginV=140",
-        "subtle": "FontName=DejaVu Sans,FontSize=28,PrimaryColour=&HB8B8B8,OutlineColour=&H000000,BorderStyle=1,Outline=1,Bold=0,Alignment=2,MarginV=140",
-        "neon": "FontName=DejaVu Sans,FontSize=32,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Bold=1,Alignment=2,MarginV=140,BackColour=&H00000080",
-    }
-    caption_style_str = caption_styles.get(caption_style, caption_styles["bold"])
-
-    vf = (
-        f"{scale_pad},"
-        f"subtitles={srt_path}:force_style='{caption_style_str}'"
+    wm = (watermark_text or pipeline_lib.WATERMARK) if watermark else None
+    ok, err = pipeline_lib.render_segment(
+        video_path, start, end, srt_path, out_path, clip_format=clip_format, layout=layout,
+        caption_style=caption_style, watermark_text=wm, watermark_color=watermark_color, audio_path=stretched_wav,
     )
-    if watermark:
-        vf += (
-            f",drawtext=text='{pipeline_lib.WATERMARK}':fontcolor=white@0.6:fontsize=18:"
-            "x=(w-text_w)/2:y=h-70"
-        )
-    cmd = [
-        "ffmpeg", "-y", "-ss", str(seg["start"]), "-to", str(seg["end"]),
-        "-i", video_path, "-i", stretched_wav,
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-vf", vf, "-shortest",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
-        out_path,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    os.unlink(stretched_wav)
-    return out_path, translated, result.returncode == 0, result.stderr[-800:]
+    try:
+        os.unlink(stretched_wav)
+    except OSError:
+        pass
+    return out_path, translated, ok, err

@@ -4,14 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Peakcut — Free AI Video Clipper: Turn Long Videos Into Short Clips</title>
-<meta name="description" content="Upload a video and get the best moments back as vertical, auto-captioned short clips for TikTok, Reels and Shorts. Free to try, no editing skills needed." />
+<meta name="description" content="Upload a podcast, stream or talk and get the best moments back as captioned vertical clips for TikTok, Reels and Shorts. Clips end on full sentences. 5 free videos a month, no card." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%237048e8'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Peakcut — Free AI Video Clipper" />
-<meta property="og:description" content="Turn long videos into short, captioned, ready-to-post clips automatically. Free to try." />
+<meta property="og:description" content="Long video in, ready-to-post short clips out. Full-sentence cuts, word-timed captions, no credits that expire." />
 <meta name="twitter:card" content="summary" />
 <meta name="twitter:title" content="Peakcut — Free AI Video Clipper" />
-<meta name="twitter:description" content="Turn long videos into short, captioned, ready-to-post clips automatically. Free to try." />
+<meta name="twitter:description" content="Long video in, ready-to-post short clips out. Full-sentence cuts, word-timed captions, no credits that expire." />
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5158161193547085" crossorigin="anonymous"></script>
 <script type="application/ld+json">
 {
@@ -21,10 +21,11 @@
   "url": "https://clipai-tgnv.onrender.com/",
   "applicationCategory": "MultimediaApplication",
   "operatingSystem": "Any (web-based)",
-  "description": "Upload a video and get the best moments back as vertical, auto-captioned short clips for TikTok, Reels and Shorts.",
+  "description": "Upload a video and get the best moments back as captioned short clips for TikTok, Reels and Shorts.",
   "offers": [
     { "@type": "Offer", "name": "Free plan", "price": "0", "priceCurrency": "USD" },
-    { "@type": "Offer", "name": "Pro plan", "price": "15.00", "priceCurrency": "USD" }
+    { "@type": "Offer", "name": "Pro plan", "price": "15.00", "priceCurrency": "USD" },
+    { "@type": "Offer", "name": "Pro Plus plan", "price": "29.00", "priceCurrency": "USD" }
   ]
 }
 </script>
@@ -33,36 +34,12 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "Is it really free?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes — 5 videos per month are free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark." }
-    },
-    {
-      "@type": "Question",
-      "name": "How long does it take?",
-      "acceptedAnswer": { "@type": "Answer", "text": "A few minutes per video. Your video enters a queue and the page updates live — you can leave it open and come back." }
-    },
-    {
-      "@type": "Question",
-      "name": "What happens to my video?",
-      "acceptedAnswer": { "@type": "Answer", "text": "It's processed automatically and deleted from our servers within 24 hours. Nothing is used for anything except making your clips." }
-    },
-    {
-      "@type": "Question",
-      "name": "What videos work best?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Talking content with clear speech: podcasts, interviews, talks, streams, sermons, lectures. Music-only or silent footage won't produce good clips." }
-    },
-    {
-      "@type": "Question",
-      "name": "Can I dub my clips into another language?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes — Pro plans can dub English-source clips into Spanish, French, or Portuguese: the speech is translated and re-voiced, and the captions are translated too." }
-    },
-    {
-      "@type": "Question",
-      "name": "How do I download my clips?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Each clip has an individual download button, or use 'Download All as ZIP' to get all 3 clips + metadata in one file. Works for both regular and dubbed clips." }
-    }
+    { "@type": "Question", "name": "Is it really free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes — 5 videos every month, no card needed, 3 clips per video. Free clips carry a small 'Made with Peakcut' watermark. Pro ($15/mo) gives 20 videos/month, 5 clips per video and no watermark." } },
+    { "@type": "Question", "name": "Will my clips get cut off mid-sentence?", "acceptedAnswer": { "@type": "Answer", "text": "No. Peakcut only starts and ends clips on sentence boundaries or natural pauses, and pads each cut slightly so the first and last words aren't clipped." } },
+    { "@type": "Question", "name": "How long does it take?", "acceptedAnswer": { "@type": "Answer", "text": "Usually a few minutes. The page shows the real stage (transcribing, finding moments, rendering) and you can ask for an email when it's done." } },
+    { "@type": "Question", "name": "What happens to my video?", "acceptedAnswer": { "@type": "Answer", "text": "It's used only to make your clips. The upload is deleted as soon as clips are rendered, and the clips are deleted after 24 hours." } },
+    { "@type": "Question", "name": "Do unused videos or credits expire?", "acceptedAnswer": { "@type": "Answer", "text": "There are no credits. You get a simple number of videos per calendar month, and failed videos never count." } },
+    { "@type": "Question", "name": "How do I cancel?", "acceptedAnswer": { "@type": "Answer", "text": "One click: Settings → Manage billing opens Stripe's portal where you can cancel, switch plans or download invoices — no emails, no chat bots." } }
   ]
 }
 </script>
@@ -70,116 +47,126 @@
   :root {
     --ink: #16141f; --paper: #f6f5fb; --card: #ffffff; --accent: #7048e8;
     --accent-dark: #5a35c9; --muted: #6b6478; --border: #e3e0f0; --radius: 14px;
+    --ok: #1f9d55; --warn: #b45309; --bad: #b91c1c;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.55; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px; }
-  header { text-align: center; padding: 56px 0 20px; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 16px; }
+  header { text-align: center; padding: 48px 0 16px; }
   .brand { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 6px; }
-  .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; }
-  h1 { font-size: 2.2rem; margin: 10px 0 12px; letter-spacing: -0.02em; }
-  header p.tagline { color: var(--muted); max-width: 520px; margin: 0 auto; }
+  .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; margin: 0; }
+  h1 { font-size: clamp(1.7rem, 5vw, 2.3rem); margin: 10px 0 12px; letter-spacing: -0.02em; line-height: 1.15; }
+  header p.tagline { color: var(--muted); max-width: 560px; margin: 0 auto; }
+  .trust { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin-top: 14px; font-size: 0.82rem; color: var(--muted); }
+  .trust span::before { content: "✓ "; color: var(--ok); font-weight: 800; }
 
-  .drop-zone {
-    margin: 36px 0 12px; border: 2px dashed var(--border); border-radius: var(--radius);
-    background: var(--card); padding: 50px 20px; text-align: center; cursor: pointer;
-    transition: border-color 0.15s ease, background 0.15s ease;
-  }
+  .nav-bar { display: flex; justify-content: center; gap: 24px; padding: 12px 0 16px; }
+  .nav-bar a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+  .nav-bar a:hover, .nav-bar a.active { color: var(--accent); }
+
+  .account-bar { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px; font-size: 0.85rem; color: var(--muted); }
+  .account-bar a { color: var(--muted); }
+  .pro-badge { display: inline-block; background: var(--ok); color: #fff; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 10px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-top: 16px; }
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 14px; }
+  .opt label { display: block; font-weight: 700; font-size: 0.78rem; margin-bottom: 4px; }
+  .opt select, .opt input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.88rem; background: #fff; color: var(--ink); }
+  .opt select:disabled { opacity: 0.55; cursor: not-allowed; }
+  .opt .hint { color: var(--muted); font-size: 0.72rem; margin: 3px 0 0; }
+  .pro-tag { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 0.62rem; font-weight: 700; vertical-align: middle; }
+  .device-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 0.85rem; }
+  .device-label { font-weight: 700; font-size: 0.78rem; margin-right: 2px; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; background: #fff; }
+  .seg input:checked + span { border-color: var(--accent); background: #f1ecff; color: var(--accent); font-weight: 700; }
+  .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .device-hint { color: var(--muted); font-size: 0.78rem; flex-basis: 100%; }
+  .device-hint a { color: var(--accent); }
+  .preset-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 0.85rem; flex-wrap: wrap; }
+  .preset-row select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); }
+
+  .drop-zone { margin: 16px 0 10px; border: 2px dashed var(--border); border-radius: var(--radius); background: var(--card); padding: 44px 20px; text-align: center; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+  .drop-zone:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .drop-zone.drag { border-color: var(--accent); background: #f1ecff; }
-  .drop-zone.busy { pointer-events: none; opacity: 0.6; }
   .drop-zone p { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
   .drop-zone .icon { font-size: 2rem; }
   input[type=file] { display: none; }
 
-  .usage-note { text-align: center; color: var(--muted); font-size: 0.85rem; margin-bottom: 30px; }
+  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; gap: 8px; }
+  .queue-item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-item .size { color: var(--muted); font-size: 0.85rem; }
+  .queue-item button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 1.1rem; }
 
-  .dub-row { margin: 20px 0 0; text-align: center; font-size: 0.85rem; }
-  .dub-row label { font-weight: 600; margin-right: 8px; }
-  .dub-row select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.85rem; }
-  .dub-row select:disabled { opacity: 0.5; cursor: not-allowed; }
-  .dub-row .pro-tag { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 0.65rem; font-weight: 700; vertical-align: middle; }
-  .dub-row .dub-hint { color: var(--muted); font-size: 0.75rem; margin: 4px 0 0; }
+  button.primary, a.primary { display: block; margin: 0 auto; background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 12px 32px; font-weight: 700; font-size: 0.95rem; cursor: pointer; text-decoration: none; text-align: center; width: fit-content; }
+  button.primary:hover, a.primary:hover { background: var(--accent-dark); }
+  button.primary:disabled { opacity: 0.6; cursor: wait; }
 
-  .quota-badge { display: inline-block; padding: 8px 16px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 20px; }
+  .usage-note { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 6px 0 4px; }
+  .quota-badge { display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; }
   .quota-badge.available { background: #d1fae5; color: #065f46; }
   .quota-badge.warning { background: #fef3c7; color: #92400e; }
   .quota-badge.full { background: #fee2e2; color: #991b1b; }
 
-  .nav-bar { display: flex; justify-content: center; gap: 24px; padding: 16px 0 20px; margin-bottom: 20px; }
-  .nav-bar a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
-  .nav-bar a:hover { color: var(--ink); }
+  #status { text-align: center; margin: 16px 0; color: var(--muted); font-size: 0.9rem; min-height: 20px; }
 
-  button.primary {
-    display: block; margin: 0 auto; background: var(--accent); color: #fff; border: none;
-    border-radius: 999px; padding: 12px 32px; font-weight: 700; font-size: 0.95rem; cursor: pointer;
-  }
-  button.primary:hover { background: var(--accent-dark); }
-
-  #status { text-align: center; margin: 20px 0; color: var(--muted); font-size: 0.9rem; min-height: 20px; }
-  .progress-track { max-width: 420px; margin: 0 auto 8px; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; display: none; }
+  .job { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 16px 0; }
+  .job-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .job-head h2 { margin: 0; font-size: 1rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-status { color: var(--muted); font-size: 0.86rem; margin: 8px 0; }
+  .job-status.error { color: var(--bad); }
+  .progress-track { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; }
   .progress-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 999px; transition: width 0.6s ease; }
+  .stages { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 0.75rem; }
+  .stages span { padding: 2px 8px; border-radius: 999px; background: #f1f0f7; color: var(--muted); }
+  .stages span.on { background: #ede7ff; color: var(--accent); font-weight: 700; }
+  .stages span.done { background: #d1fae5; color: #065f46; }
 
-  .clips { display: grid; gap: 16px; margin: 30px 0 40px; }
-  .clip-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 20px 22px; display: flex; gap: 18px; align-items: center;
-  }
-  .clip-card video { width: 110px; border-radius: 10px; background: #000; flex-shrink: 0; }
+  .clip-card { border-top: 1px solid var(--border); padding: 14px 0 4px; display: flex; gap: 16px; }
+  .clip-card video { width: 120px; max-height: 214px; border-radius: 10px; background: #000; flex-shrink: 0; object-fit: contain; }
   .clip-card .meta { flex: 1; min-width: 0; }
   .clip-card .rank { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
+  .clip-card h3 { margin: 4px 0; font-size: 1rem; }
   .virality-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; color: #fff; font-size: 0.7rem; font-weight: 700; text-transform: none; letter-spacing: normal; vertical-align: middle; }
-  .clip-card p { margin: 4px 0 0; font-size: 0.9rem; color: var(--ink); }
+  .clip-card p.transcript { margin: 4px 0 0; font-size: 0.86rem; color: var(--muted); }
+  .clip-card .tags { font-size: 0.8rem; color: var(--accent); margin-top: 4px; }
   .clip-card .score { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
-  .clip-card .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  .clip-card a.download, .clip-card button.share-btn {
-    background: var(--ink); color: #fff; text-decoration: none; padding: 8px 16px;
-    border-radius: 999px; font-size: 0.85rem; font-weight: 700; white-space: nowrap;
-    border: none; cursor: pointer; transition: background 0.2s;
-  }
-  .clip-card button.share-btn { background: var(--accent); }
-  .clip-card button.share-btn:hover { background: var(--accent-dark); }
-  .clip-card a.download:hover { background: #3a3a4e; }
-  @media (max-width: 560px) { .clip-card { flex-wrap: wrap; } }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btn { background: var(--ink); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; white-space: nowrap; border: none; cursor: pointer; display: inline-block; }
+  .btn:hover { background: #3a3a4e; }
+  .btn.accent { background: var(--accent); }
+  .btn.accent:hover { background: var(--accent-dark); }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  .expiry { font-size: 0.78rem; color: var(--warn); margin-top: 6px; }
+  @media (max-width: 560px) { .clip-card { flex-direction: column; } .clip-card video { width: 100%; max-height: 420px; } }
 
-  .paywall { text-align: center; padding: 30px; background: #fff4e6; border: 1px dashed var(--accent); border-radius: var(--radius); margin: 20px 0 30px; }
+  .paywall { text-align: center; padding: 26px; background: #fff4e6; border: 1px dashed var(--accent); border-radius: var(--radius); margin: 20px 0; }
   .paywall h3 { margin-top: 0; }
-  .paywall button.primary { margin-top: 14px; }
+  .signin-gate { text-align: center; padding: 36px 20px; background: var(--card); border: 2px dashed var(--border); border-radius: var(--radius); margin: 16px 0 10px; }
+  .signin-gate p { color: var(--muted); margin: 6px 0 20px; }
+  .google-btn { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #3c4043; border: 1px solid #dadce0; border-radius: 999px; padding: 10px 22px; font-weight: 600; font-size: 0.9rem; cursor: pointer; text-decoration: none; }
+  .google-btn svg { width: 18px; height: 18px; }
 
-  .pro-badge { display: inline-block; background: #1f9d55; color: #fff; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 10px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .ad-slot { margin: 20px 0 30px; text-align: center; }
 
-  .queue-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
-  .queue-item .name { flex: 1; color: var(--ink); }
-  .queue-item .size { color: var(--muted); font-size: 0.85rem; margin-right: 12px; }
-  .queue-item button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 1.2rem; }
-  .queue-item button:hover { color: var(--ink); }
-
-  .ad-slot { margin: 20px 0 40px; padding: 16px; border: 1px dashed var(--border); border-radius: 10px; text-align: center; color: var(--muted); font-size: 0.8rem; background: var(--card); }
-
-  section.content { margin: 60px 0; }
+  section.content { margin: 56px 0; }
   section.content h2 { font-size: 1.4rem; margin-bottom: 18px; }
-  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-  .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
   .step .num { font-weight: 800; color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
   .step h3 { margin: 8px 0 6px; font-size: 1rem; }
   .step p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  .compare { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius); overflow: hidden; font-size: 0.88rem; }
+  .compare th, .compare td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .compare th { background: #f3f0ff; }
+  .compare td:last-child { color: var(--ok); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
 
   details { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; }
   details summary { font-weight: 600; cursor: pointer; }
   details p { color: var(--muted); font-size: 0.92rem; margin: 10px 0 0; }
-
-  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 30px 0 50px; }
-
-  .account-bar { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.85rem; color: var(--muted); }
-  .account-bar a { color: var(--muted); }
-  .signin-gate { text-align: center; padding: 40px 20px; background: var(--card); border: 2px dashed var(--border); border-radius: var(--radius); margin: 36px 0 12px; }
-  .signin-gate p { color: var(--muted); margin: 6px 0 20px; }
-  .google-btn {
-    display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #3c4043;
-    border: 1px solid #dadce0; border-radius: 999px; padding: 10px 22px; font-weight: 600;
-    font-size: 0.9rem; cursor: pointer; text-decoration: none;
-  }
-  .google-btn:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
-  .google-btn svg { width: 18px; height: 18px; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 30px 0 90px; }
+  footer a { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -187,629 +174,653 @@
     <header>
       <div class="brand">🎬 Peakcut</div>
       <p class="eyebrow">Free AI Video Clipper<span class="pro-badge" id="proBadge" style="display:none">Pro</span></p>
-      <h1>Turn long videos into short, ready-to-post clips</h1>
-      <p class="tagline" id="tagline">Upload once — Peakcut finds the best moments, cuts them vertical, and burns in captions automatically. No editing skills needed. 5 free videos every month.</p>
+      <h1>Turn long videos into short clips people actually finish watching</h1>
+      <p class="tagline">Drop in a podcast, stream or talk. Peakcut finds the strongest moments, cuts them on full sentences, reframes them vertical and burns in word-timed captions. No editing skills, no credits that expire.</p>
+      <div class="trust"><span>5 free videos / month</span><span>No card needed</span><span>Never cuts mid-sentence</span><span>Use your own GPU</span><span>Cancel in one click</span></div>
     </header>
 
-    <div class="nav-bar">
-      <a href="/" style="color: var(--accent); font-weight: 700;">App</a>
+    <nav class="nav-bar">
+      <a href="/" class="active">App</a>
       <a href="/pricing">Pricing</a>
+      <a href="/api/docs">API</a>
       <a href="#faq">FAQ</a>
-    </div>
+    </nav>
 
     <div class="account-bar" id="accountBar" style="display:none"></div>
 
     <div class="signin-gate" id="signinGate" style="display:none">
-      <div class="icon" style="font-size:2rem">🔒</div>
-      <strong>Sign in to process your free video</strong>
-      <p>A free Google account is all it takes — keeps things fair so everyone gets their free allocation (5 videos per month).</p>
+      <div style="font-size:2rem">🔒</div>
+      <strong>Sign in to process your free videos</strong>
+      <p>A free Google account keeps the free tier fair — everyone gets 5 videos a month. Paid before? Sign in with the same email and your plan comes back automatically.</p>
       <a class="google-btn" href="/auth/google/login">
-        <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-2.1 14.1-5.5l-6.5-5.5C29.6 35.9 26.9 37 24 37c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.8 40.5 16.3 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.5 5.5C41.5 36 45 30.5 45 24c0-1.4-.1-2.7-.4-3.5z"/></svg>
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-2.1 14.1-5.5l-6.5-5.5C29.6 35.9 26.9 37 24 37c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.8 40.5 16.3 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.5 5.5C41.5 36 45 30.5 45 24c0-1.4-.1-2.7-.4-3.5z"/></svg>
         Sign in with Google
       </a>
     </div>
 
-    <div class="dub-row" id="dubRow">
-      <label for="dubLang">Dub into another language <span class="pro-tag">Pro</span></label>
-      <select id="dubLang">
-        <option value="">Off — keep original language</option>
-        <option value="es">Spanish</option>
-        <option value="fr">French</option>
-        <option value="pt">Portuguese</option>
-      </select>
-      <p class="dub-hint">Source video must be in English. Captions and voice are both translated.</p>
+    <div id="appArea">
+      <div class="panel">
+        <div class="preset-row" id="presetRow" style="display:none">
+          <label for="presetSelect"><strong>Preset:</strong></label>
+          <select id="presetSelect"><option value="">— choose a saved preset —</option></select>
+          <a href="/settings" style="color:var(--accent);font-size:0.8rem">Manage presets</a>
+        </div>
+        <div class="device-row" id="deviceRow">
+          <span class="device-label">Process on</span>
+          <label class="seg"><input type="radio" name="device" value="cloud" checked><span>☁️ Peakcut cloud</span></label>
+          <label class="seg"><input type="radio" name="device" value="own"><span>💻 My computer <span class="pro-tag" id="hwLock" style="display:none">Pro</span></span></label>
+          <span class="device-hint" id="deviceHint"></span>
+        </div>
+        <div class="options">
+          <div class="opt">
+            <label for="clipFormat">Format</label>
+            <select id="clipFormat">
+              <option value="vertical">Vertical 9:16 — TikTok, Reels, Shorts</option>
+              <option value="square">Square 1:1 — Instagram feed</option>
+              <option value="horizontal">Horizontal 16:9 — YouTube, LinkedIn</option>
+            </select>
+          </div>
+          <div class="opt">
+            <label for="layout">Framing</label>
+            <select id="layout">
+              <option value="crop">Fill frame (crop centre)</option>
+              <option value="blur">Show everything + blurred fill</option>
+              <option value="fit">Letterbox (bars)</option>
+            </select>
+            <p class="hint">Use "show everything" for side-by-side podcasts.</p>
+          </div>
+          <div class="opt">
+            <label for="clipLength">Clip length</label>
+            <select id="clipLength">
+              <option value="short">Short · 12–30s</option>
+              <option value="medium" selected>Medium · 25–60s</option>
+              <option value="long">Long · 45–90s</option>
+            </select>
+          </div>
+          <div class="opt">
+            <label for="captionStyle">Captions</label>
+            <select id="captionStyle">
+              <option value="bold">Bold white</option>
+              <option value="boxed">Boxed (high contrast)</option>
+              <option value="neon">Neon yellow</option>
+              <option value="outline">White outline</option>
+              <option value="subtle">Subtle</option>
+            </select>
+          </div>
+          <div class="opt">
+            <label for="nClips">Clips per video</label>
+            <select id="nClips"></select>
+            <p class="hint" id="nClipsHint"></p>
+          </div>
+          <div class="opt">
+            <label for="dubLang">Dub into <span class="pro-tag">Pro</span></label>
+            <select id="dubLang">
+              <option value="">Off — original audio</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="pt">Portuguese</option>
+            </select>
+            <p class="hint">English source videos only.</p>
+          </div>
+          <div class="opt" id="notifyRow" style="display:none">
+            <label for="notifyEmail">Email me when ready</label>
+            <input type="email" id="notifyEmail" placeholder="you@example.com" autocomplete="email" />
+          </div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Upload videos">
+        <div class="icon">🎬</div>
+        <strong>Drop video(s) here or click to upload</strong>
+        <p>MP4, MOV, M4V, WEBM, MKV · up to <span id="maxMb">300</span>MB each</p>
+        <p style="font-size:0.85rem">💡 Best with clear speech: podcasts, interviews, talks, streams, sermons, lectures.</p>
+        <input type="file" id="fileInput" accept="video/*,.mkv" multiple />
+      </div>
+
+      <div id="batchQueue" style="display:none;margin-top:12px;">
+        <div id="queueList" style="display:grid;gap:8px;"></div>
+        <button class="primary" id="processBatchBtn" style="margin-top:14px;">Make my clips</button>
+      </div>
+
+      <p class="usage-note" id="usageNote">Checking your plan…</p>
+      <div id="quotaBadgeContainer" style="text-align:center;"></div>
     </div>
 
-    <div class="dub-row">
-      <label for="clipFormat">Clip format</label>
-      <select id="clipFormat">
-        <option value="vertical">Vertical 9:16 (TikTok, Reels)</option>
-        <option value="square">Square 1:1 (Instagram, Pinterest)</option>
-        <option value="horizontal">Horizontal 16:9 (YouTube, LinkedIn)</option>
-      </select>
-      <p class="dub-hint">Choose the format best for your platform.</p>
-    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="jobs"></div>
 
-    <div class="dub-row">
-      <label for="captionStyle">Caption style</label>
-      <select id="captionStyle">
-        <option value="bold">Bold with shadow (default)</option>
-        <option value="outline">White outline</option>
-        <option value="subtle">Subtle gray</option>
-        <option value="neon">Neon yellow</option>
-      </select>
-      <p class="dub-hint">Choose how captions appear on your clips.</p>
-    </div>
-
-    <div class="dub-row" id="notifyRow" style="display:none">
-      <label for="notifyEmail">Email me when it's ready</label>
-      <input type="email" id="notifyEmail" placeholder="you@example.com" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;" />
-    </div>
-
-    <div class="drop-zone" id="dropZone">
-      <div class="icon">🎬</div>
-      <strong>Drop video(s) here or click to upload</strong>
-      <p>MP4, MOV, WEBM, MKV — up to a few minutes long works best on the free plan</p>
-      <p style="margin-top:12px;font-size:0.9rem;color:var(--muted)">💡 Upload one or multiple videos. Works best with clear speech: podcasts, interviews, talks, sermons. Music-only won't work.</p>
-      <input type="file" id="fileInput" accept="video/*" multiple />
-    </div>
-
-    <div id="batchQueue" style="display:none;margin-top:20px;">
-      <h3 style="font-size:1rem;margin-bottom:12px;">Queued videos</h3>
-      <div id="queueList" style="display:grid;gap:12px;"></div>
-      <button class="primary" id="processBatchBtn" style="margin-top:16px;">Process all videos</button>
-    </div>
-    <p class="usage-note" id="usageNote">Checking your free plan usage…</p>
-
-    <div id="quotaBadgeContainer" style="text-align:center;"></div>
-    <div class="progress-track" id="progressTrack"><div class="progress-bar" id="progressBar"></div></div>
-    <div id="status" role="status"></div>
-    <div class="clips" id="clips"></div>
     <div class="paywall" id="paywall" style="display:none">
-      <h3>Free plan used up</h3>
-      <p>You've used your free video allocation for this month. Upgrade to Pro ($15/mo) for 20 videos/month or Pro Plus ($29/mo) for 50 videos/month — both include watermark-free rendering and multi-language dubbing.</p>
-      <button class="primary" id="upgradeBtn">See plans</button>
+      <h3 id="paywallTitle">You've used this month's videos</h3>
+      <p id="paywallText">Upgrade to Pro ($15/mo) for 20 videos a month, 5 clips per video and no watermark — or Pro Plus ($29/mo) for 50. Cancel any time in one click.</p>
+      <a class="primary" href="/pricing">See plans</a>
     </div>
-    <div class="ad-slot" id="adSlot"></div>
+
+    <div class="ad-slot" id="adSlot" style="display:none"></div>
 
     <section class="content">
       <h2>How it works</h2>
       <div class="steps">
-        <div class="step">
-          <div class="num">Step 1</div>
-          <h3>Upload your video</h3>
-          <p>A podcast episode, a talk, a stream VOD, a lecture — anything with speech.</p>
-        </div>
-        <div class="step">
-          <div class="num">Step 2</div>
-          <h3>AI finds the moments</h3>
-          <p>Peakcut transcribes the audio and scores every segment by energy and punchiness to surface the highlights.</p>
-        </div>
-        <div class="step">
-          <div class="num">Step 3</div>
-          <h3>Download &amp; post</h3>
-          <p>Each clip comes back vertical (9:16) with bold word-by-word captions — ready for TikTok, Reels, and Shorts.</p>
-        </div>
+        <div class="step"><div class="num">Step 1</div><h3>Upload</h3><p>A podcast episode, talk, stream VOD or lecture — anything with speech.</p></div>
+        <div class="step"><div class="num">Step 2</div><h3>Peakcut finds the moments</h3><p>It transcribes every word, then scores sentence-complete stretches for hooks, energy and pace.</p></div>
+        <div class="step"><div class="num">Step 3</div><h3>Download &amp; post</h3><p>Reframed clips with word-timed captions, a suggested title and hashtags, plus .srt files if you want to edit.</p></div>
+      </div>
+    </section>
+
+    <section class="content">
+      <h2>Built around what people hate about other clippers</h2>
+      <div class="table-scroll">
+        <table class="compare">
+          <tr><th>Common complaint</th><th>What Peakcut does</th></tr>
+          <tr><td>"Clips start or end mid-sentence"</td><td>Cuts only on sentence boundaries or natural pauses, with padding so no word is clipped.</td></tr>
+          <tr><td>"Credits expire / vanish when I cancel"</td><td>No credits. A plain number of videos per month. Failed videos never count.</td></tr>
+          <tr><td>"Charged after cancelling / can't find cancel"</td><td>One-click cancel in Settings via Stripe's portal. Access stays until the period ends.</td></tr>
+          <tr><td>"Vertical crop cuts people out"</td><td>Pick fill, "show everything" with a blurred fill, or letterbox per video.</td></tr>
+          <tr><td>"Captions are wrong and I can't fix them"</td><td>Every clip ships with an .srt caption file you can edit in CapCut or Premiere.</td></tr>
+          <tr><td>"No idea what it's doing / stuck processing"</td><td>Live stages and queue position, optional email when done, and failures are refunded automatically.</td></tr>
+        </table>
       </div>
     </section>
 
     <section class="content" id="faq">
       <h2>Frequently asked questions</h2>
-      <details>
-        <summary>Is it really free?</summary>
-        <p>Yes — your first video is free, no card needed. A quick Google sign-in may be required to keep the free tier fair. Pro ($15/mo) removes the limit and the watermark.</p>
-      </details>
-      <details>
-        <summary>How long does it take?</summary>
-        <p>A few minutes per video. Your video enters a queue and the page updates live — you can leave it open and come back.</p>
-      </details>
-      <details>
-        <summary>What happens to my video?</summary>
-        <p>It's processed automatically and deleted from our servers within 24 hours. Nothing is used for anything except making your clips.</p>
-      </details>
-      <details>
-        <summary>What videos work best?</summary>
-        <p>Talking content with clear speech: podcasts, interviews, talks, streams, sermons, lectures. Music-only or silent footage won't produce good clips.</p>
-      </details>
-      <details>
-        <summary>Can I dub my clips into another language?</summary>
-        <p>Yes — Pro plans can dub English-source clips into Spanish, French, or Portuguese: the speech is translated and re-voiced, and the captions are translated too.</p>
-      </details>
+      <details><summary>Is it really free?</summary><p>Yes — 5 videos every calendar month, 3 clips each, no card. Free clips have a small "Made with Peakcut" watermark. Pro ($15/mo) is 20 videos, 5 clips each, no watermark and dubbing; Pro Plus ($29/mo) is 50 videos, 8 clips each and your own watermark.</p></details>
+      <details><summary>Will clips get cut off mid-sentence?</summary><p>No. Clips only start and end on sentence boundaries or natural pauses, and every cut is padded slightly so first and last words aren't chopped.</p></details>
+      <details><summary>How long does it take?</summary><p>Usually a few minutes. You'll see the real stage — transcribing, finding moments, rendering — and can ask for an email when it's ready. Paid plans skip ahead of the free queue.</p></details>
+      <details><summary>What happens to my video?</summary><p>It's only used to make your clips. The upload is deleted as soon as clips are rendered; clips are deleted after 24 hours, so download them. You can wipe everything from Settings at any time.</p></details>
+      <details><summary>Do unused videos roll over? Do credits expire?</summary><p>There are no credits to expire. Your allowance resets on the 1st of each month (UTC). If a video fails to process, it doesn't count.</p></details>
+      <details><summary>How do I cancel?</summary><p>Settings → Manage billing. Stripe's portal lets you cancel, switch plans, update your card or download invoices instantly. Your plan stays active until the end of the period you paid for.</p></details>
+      <details><summary>Can I auto-post my clips?</summary><p>Yes — hit "Auto-post" on any clip: it saves the clip, copies the title and hashtags, and opens <a href="https://buffer.com" target="_blank" rel="noopener">Buffer</a>, which can publish to TikTok, Instagram Reels and YouTube Shorts on a schedule (it has a free plan).</p></details>
+      <details><summary>Can I use my own computer or GPU?</summary><p>Yes, on Pro and Pro Plus (or as a standalone add-on). Pair a computer in Settings → Your computers and run the small Peakcut worker on it. Then choose "My computer" when uploading: your PC does the transcription and rendering (on an NVIDIA GPU or Apple Silicon automatically), and those videos don't use your monthly allowance. You can upload from your phone while your PC at home does the work. The worker also runs fully offline with no upload at all.</p></details>
+      <details><summary>Can I edit the captions?</summary><p>Yes — each clip comes with an .srt file. Import it with the clip into CapCut, Premiere, DaVinci Resolve or YouTube Studio.</p></details>
+      <details><summary>Can I dub my clips into another language?</summary><p>Pro plans can dub English videos into Spanish, French or Portuguese — speech is translated and re-voiced, and captions are translated too.</p></details>
     </section>
   </div>
 
-  <footer>Peakcut — automatic short clips from long videos. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>
+  <footer>Peakcut — automatic short clips from long videos. <a href="/pricing">Pricing</a> · <a href="/api/docs">API</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:__CONTACT_EMAIL__">Contact</a></footer>
 
   <script>
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const statusEl = document.getElementById('status');
-    const clipsEl = document.getElementById('clips');
-    const usageNote = document.getElementById('usageNote');
-    const paywall = document.getElementById('paywall');
-    const proBadge = document.getElementById('proBadge');
-    const adSlot = document.getElementById('adSlot');
-    const upgradeBtn = document.getElementById('upgradeBtn');
-    const progressTrack = document.getElementById('progressTrack');
-    const progressBar = document.getElementById('progressBar');
-    const accountBar = document.getElementById('accountBar');
-    const signinGate = document.getElementById('signinGate');
-    const dubLang = document.getElementById('dubLang');
-    const clipFormat = document.getElementById('clipFormat');
-    const captionStyle = document.getElementById('captionStyle');
-    const notifyRow = document.getElementById('notifyRow');
-    const notifyEmail = document.getElementById('notifyEmail');
-    const batchQueue = document.getElementById('batchQueue');
-    const queueList = document.getElementById('queueList');
-    const processBatchBtn = document.getElementById('processBatchBtn');
+    const CONTACT_EMAIL = '__CONTACT_EMAIL__';
+    const $ = (id) => document.getElementById(id);
+    const dropZone = $('dropZone'), fileInput = $('fileInput'), statusEl = $('status'), jobsEl = $('jobs');
+    const usageNote = $('usageNote'), paywall = $('paywall'), proBadge = $('proBadge'), adSlot = $('adSlot');
+    const accountBar = $('accountBar'), signinGate = $('signinGate'), appArea = $('appArea');
+    const dubLang = $('dubLang'), clipFormat = $('clipFormat'), captionStyle = $('captionStyle');
+    const layoutSel = $('layout'), clipLength = $('clipLength'), nClips = $('nClips');
+    const notifyRow = $('notifyRow'), notifyEmail = $('notifyEmail');
+    const batchQueue = $('batchQueue'), queueList = $('queueList'), processBatchBtn = $('processBatchBtn');
+    const STAGES = [['queued', 'Queued'], ['transcribing', 'Transcribing'], ['finding_moments', 'Finding moments'], ['rendering', 'Rendering'], ['done', 'Done']];
 
-    const EXPECTED_SECONDS = 300; // rough guide for the progress bar only
-    let fileQueue = []; // for batch uploads
+    let usage = null;
+    let fileQueue = [];
+    const selectedDevice = () => (document.querySelector('input[name=device]:checked') || {}).value || 'cloud';
+
+    function updateDeviceHint() {
+      const hint = $('deviceHint');
+      const own = selectedDevice() === 'own';
+      fillClipCount(own ? 8 : ((usage && usage.max_clips) || 3));
+      if (!own) {
+        hint.innerHTML = '';
+        return;
+      }
+      if (usage && !usage.own_hardware) {
+        hint.innerHTML = 'Let your own PC or GPU make the clips, without using your monthly videos. Included with <a href="/pricing">Pro</a>' +
+          (usage.hardware_addon_available ? ', or <a href="/create-checkout-session-hardware">unlock it on its own</a>.' : '.');
+        return;
+      }
+      const devices = (usage && usage.devices) || [];
+      const online = devices.filter(d => d.online);
+      if (!devices.length) {
+        hint.innerHTML = 'Use your own PC or GPU — those videos don\'t use your monthly allowance. <a href="/settings#computers">Pair a computer first →</a>';
+      } else if (!online.length) {
+        hint.innerHTML = `${escapeHtml(devices.map(d => d.name).join(', '))} ${devices.length > 1 ? 'are' : 'is'} offline — start <code>peakcut_worker.py</code> on it and your video will start automatically. <a href="/settings#computers">Setup</a>`;
+      } else {
+        hint.textContent = `✓ ${online.map(d => d.name).join(', ')} online · doesn't use your monthly allowance · up to ${usage.own_daily_limit}/day`;
+      }
+      try { localStorage.setItem('device', selectedDevice()); } catch (e) {}
+    }
+    document.querySelectorAll('input[name=device]').forEach(r => r.addEventListener('change', updateDeviceHint));
+    try { const d = localStorage.getItem('device'); if (d) { const r = document.querySelector(`input[name=device][value="${d === 'own' ? 'own' : 'cloud'}"]`); if (r) r.checked = true; } } catch (e) {}
 
     function escapeHtml(str) {
       const div = document.createElement('div');
-      div.textContent = str;
+      div.textContent = str == null ? '' : String(str);
       return div.innerHTML;
+    }
+    function safeGet(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; } }
+    function safeSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+
+    // Remember last-used options so returning users don't re-pick every time.
+    const OPTION_FIELDS = { clipFormat, layout: layoutSel, clipLength, captionStyle };
+    function saveOptions() { safeSet('lastOptions', Object.fromEntries(Object.entries(OPTION_FIELDS).map(([k, el]) => [k, el.value]))); }
+    function restoreOptions(opts) {
+      if (!opts) return;
+      for (const [k, el] of Object.entries(OPTION_FIELDS)) {
+        if (opts[k] && [...el.options].some(o => o.value === opts[k])) el.value = opts[k];
+      }
+    }
+    Object.values(OPTION_FIELDS).forEach(el => el.addEventListener('change', saveOptions));
+    restoreOptions(safeGet('lastOptions', null));
+    try { notifyEmail.value = localStorage.getItem('notifyEmail') || ''; } catch (e) {}
+
+    function loadPresets() {
+      const presets = safeGet('exportPresets', []);
+      const row = $('presetRow'), sel = $('presetSelect');
+      if (!presets.length) { row.style.display = 'none'; return; }
+      row.style.display = 'flex';
+      sel.innerHTML = '<option value="">— choose a saved preset —</option>' +
+        presets.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
+      sel.onchange = () => {
+        const p = presets.find(x => String(x.id) === sel.value);
+        if (!p) return;
+        restoreOptions({ clipFormat: p.format, layout: p.layout, clipLength: p.length, captionStyle: p.captions });
+        if (p.dub && !dubLang.disabled) dubLang.value = p.dub;
+        saveOptions();
+      };
+    }
+
+    function fillClipCount(max) {
+      const current = Number(nClips.value) || 3;
+      nClips.innerHTML = '';
+      for (let i = 1; i <= 8; i++) {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = i <= max ? `${i} clip${i > 1 ? 's' : ''}` : `${i} clips — upgrade`;
+        o.disabled = i > max;
+        nClips.appendChild(o);
+      }
+      nClips.value = Math.min(current, max);
+      $('nClipsHint').textContent = max < 8 ? `Your plan: up to ${max} per video.` : '';
     }
 
     async function refreshUsage() {
       try {
         const res = await fetch('/usage');
         const data = await res.json();
+        usage = data;
 
-        // Sign-in is only enforced once real Google credentials are configured
-        // server-side — until then this whole block is a no-op and the site
-        // behaves exactly as it did before (anonymous, cookie-tracked).
         if (data.google_configured) {
           if (data.signed_in) {
             accountBar.style.display = 'flex';
-            accountBar.innerHTML = `Signed in as <strong>${escapeHtml(data.email)}</strong> · <a href="/settings" style="margin:0 8px">Settings</a> · <a href="/auth/logout">Sign out</a>`;
+            accountBar.innerHTML = `Signed in as <strong>${escapeHtml(data.email)}</strong> · <a href="/settings">Settings</a> · <a href="/auth/logout">Sign out</a>`;
             signinGate.style.display = 'none';
-            dropZone.style.display = '';
+            appArea.style.display = '';
           } else {
             accountBar.style.display = 'none';
             signinGate.style.display = 'block';
-            dropZone.style.display = 'none';
+            appArea.style.display = 'none';
           }
-        }
-
-        notifyRow.style.display = data.email_configured ? 'block' : 'none';
-
-        const quotaBadgeContainer = document.getElementById('quotaBadgeContainer');
-        if (data.pro) {
-          usageNote.innerHTML = 'Pro plan — unlimited videos · <a href="/billing-portal">Manage billing</a>';
-          proBadge.style.display = 'inline-block';
-          adSlot.style.display = 'none';
-          paywall.style.display = 'none';
-          quotaBadgeContainer.innerHTML = '';
-          dubLang.disabled = false;
         } else {
-          usageNote.textContent = data.remaining > 0
-            ? `Free plan: ${data.remaining} of ${data.limit} video(s) remaining`
-            : `Free plan used up (${data.limit}/${data.limit})`;
-          proBadge.style.display = 'none';
-          adSlot.style.display = 'block';
-          dubLang.disabled = true;
-          dubLang.value = '';
-
-          // Show quota badge with color coding
-          let badgeClass = 'available';
-          if (data.remaining === 0) badgeClass = 'full';
-          else if (data.remaining <= 2) badgeClass = 'warning';
-
-          quotaBadgeContainer.innerHTML = data.remaining > 0
-            ? `<div class="quota-badge ${badgeClass}">📊 ${data.remaining} ${data.remaining === 1 ? 'video' : 'videos'} left this month</div>`
-            : `<div class="quota-badge full">⚠️ No videos remaining — upgrade to continue</div>`;
+          accountBar.style.display = 'flex';
+          accountBar.innerHTML = '<a href="/settings">Settings</a>';
         }
+
+        notifyRow.style.display = data.email_configured ? '' : 'none';
+        $('hwLock').style.display = data.own_hardware ? 'none' : 'inline-block';
+        updateDeviceHint();
+
+        const badge = $('quotaBadgeContainer');
+        const resets = new Date(data.resets_on + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const left = data.remaining;
+        usageNote.innerHTML = `${escapeHtml(data.plan_label)} plan: ${data.used} of ${data.limit} videos used this month · resets ${escapeHtml(resets)}` +
+          (data.pro ? ' · <a href="/billing-portal">Manage billing</a>' : ' · <a href="/pricing">Upgrade</a>');
+        let cls = left === 0 ? 'full' : (left <= Math.max(1, Math.round(data.limit * 0.2)) ? 'warning' : 'available');
+        badge.innerHTML = left > 0
+          ? `<div class="quota-badge ${cls}">📊 ${left} ${left === 1 ? 'video' : 'videos'} left this month</div>`
+          : `<div class="quota-badge full">⚠️ No videos left — resets ${escapeHtml(resets)}</div>`;
+
+        proBadge.textContent = data.plan_label;
+        proBadge.style.display = data.pro ? 'inline-block' : 'none';
+        adSlot.style.display = data.pro ? 'none' : 'block';
+        dubLang.disabled = !data.pro;
+        if (!data.pro) dubLang.value = '';
+        if (data.plan === 'plus') { $('paywallTitle').textContent = "You've used this month's videos"; $('paywallText').textContent = `Your allowance resets ${resets}. Need more? Email ${CONTACT_EMAIL} for a custom plan.`; }
+        else if (data.plan === 'pro') { $('paywallText').textContent = `Your allowance resets ${resets}. Pro Plus ($29/mo) gives 50 videos a month.`; }
         return data;
       } catch (e) {
         usageNote.textContent = '';
       }
     }
 
-    upgradeBtn.addEventListener('click', () => {
-      window.location.href = '/pricing';
-    });
-
+    // ── File selection ──────────────────────────────────────────────────
     function addFilesToQueue(files) {
-      for (let i = 0; i < files.length; i++) {
-        fileQueue.push(files[i]);
+      const maxMb = 300;
+      for (const f of files) {
+        if (!/\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name)) { statusEl.textContent = `Skipped ${f.name}: use MP4, MOV, M4V, WEBM or MKV.`; continue; }
+        if (f.size > maxMb * 1024 * 1024) { statusEl.textContent = `Skipped ${f.name}: over ${maxMb}MB.`; continue; }
+        fileQueue.push(f);
       }
       updateQueueDisplay();
-      if (fileQueue.length > 0) {
-        batchQueue.style.display = 'block';
-      }
     }
-
     function updateQueueDisplay() {
-      queueList.innerHTML = fileQueue.map((f, i) => {
-        const sizeStr = (f.size / 1024 / 1024).toFixed(1);
-        return `
-          <div class="queue-item">
-            <span class="name">${escapeHtml(f.name)}</span>
-            <span class="size">${sizeStr}MB</span>
-            <button type="button" onclick="removeFromQueue(${i})">✕</button>
-          </div>
-        `;
-      }).join('');
+      queueList.innerHTML = fileQueue.map((f, i) => `
+        <div class="queue-item">
+          <span class="name">${escapeHtml(f.name)}</span>
+          <span class="size">${(f.size / 1024 / 1024).toFixed(1)}MB</span>
+          <button type="button" data-remove="${i}" aria-label="Remove ${escapeHtml(f.name)}">✕</button>
+        </div>`).join('');
+      queueList.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => {
+        fileQueue.splice(Number(b.dataset.remove), 1); updateQueueDisplay();
+      }));
+      batchQueue.style.display = fileQueue.length ? 'block' : 'none';
+      processBatchBtn.textContent = fileQueue.length > 1 ? `Make clips from ${fileQueue.length} videos` : 'Make my clips';
     }
-
-    window.removeFromQueue = function(i) {
-      fileQueue.splice(i, 1);
-      updateQueueDisplay();
-      if (fileQueue.length === 0) batchQueue.style.display = 'none';
-    };
 
     dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('drag');
-      if (e.dataTransfer.files.length) addFilesToQueue(e.dataTransfer.files);
-    });
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files.length) addFilesToQueue(fileInput.files);
-    });
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drag'); if (e.dataTransfer.files.length) addFilesToQueue(e.dataTransfer.files); });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) addFilesToQueue(fileInput.files); fileInput.value = ''; });
+
+    // ── Upload (with real upload progress) ──────────────────────────────
+    function uploadWithProgress(formData, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/process');
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+        xhr.onload = () => {
+          let body = {};
+          try { body = JSON.parse(xhr.responseText); } catch (e) {}
+          resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, body });
+        };
+        xhr.onerror = () => reject(new Error('network'));
+        xhr.send(formData);
+      });
+    }
+
+    function buildFormData(file) {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('clip_format', clipFormat.value);
+      fd.append('caption_style', captionStyle.value);
+      fd.append('layout', layoutSel.value);
+      fd.append('clip_length', clipLength.value);
+      fd.append('n_clips', nClips.value || '3');
+      fd.append('device', selectedDevice());
+      if (dubLang.value) fd.append('dub_lang', dubLang.value);
+      const email = notifyEmail.value.trim();
+      if (email) { fd.append('notify_email', email); try { localStorage.setItem('notifyEmail', email); } catch (e) {} }
+      if (usage && usage.plan === 'plus') {
+        const wm = safeGet('watermarkSettings', null);
+        if (wm && wm.text) { fd.append('watermark_text', wm.text); fd.append('watermark_color', wm.color || '#ffffff'); }
+      }
+      return fd;
+    }
+
+    function createJobCard(file) {
+      const el = document.createElement('div');
+      el.className = 'job';
+      el.innerHTML = `
+        <div class="job-head"><h2>${escapeHtml(file.name)}</h2><span class="zip"></span></div>
+        <div class="job-status">Uploading… 0%</div>
+        <div class="progress-track"><div class="progress-bar"></div></div>
+        <div class="stages">${STAGES.map(([k, l]) => `<span data-stage="${k}">${l}</span>`).join('')}</div>
+        <div class="clips"></div>`;
+      jobsEl.prepend(el);
+      return {
+        el,
+        status(text, isError) { const s = el.querySelector('.job-status'); s.textContent = text; s.classList.toggle('error', !!isError); },
+        progress(pct) { el.querySelector('.progress-bar').style.width = Math.max(2, Math.min(100, pct)) + '%'; },
+        stage(name) {
+          const idx = STAGES.findIndex(s => s[0] === name);
+          el.querySelectorAll('.stages span').forEach((s, i) => { s.className = i < idx ? 'done' : (i === idx ? 'on' : ''); });
+        },
+        finish() { el.querySelector('.progress-track').style.display = 'none'; el.querySelector('.stages').style.display = 'none'; },
+      };
+    }
 
     processBatchBtn.addEventListener('click', async () => {
-      if (fileQueue.length === 0) return;
-      processBatchBtn.disabled = true;
-      let jobIds = [];
-      clipsEl.innerHTML = '';
-      batchQueue.style.display = 'none';
-      for (let i = 0; i < fileQueue.length; i++) {
-        const file = fileQueue[i];
-        statusEl.textContent = `Uploading ${i + 1} of ${fileQueue.length}: ${file.name}…`;
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('clip_format', clipFormat.value);
-        if (dubLang.value) formData.append('dub_lang', dubLang.value);
-        if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
-        try {
-          const res = await fetch('/process', { method: 'POST', body: formData });
-          if (res.status === 402) {
-            statusEl.textContent = '';
-            paywall.style.display = 'block';
-            await refreshUsage();
-            processBatchBtn.disabled = false;
-            return;
-          }
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            statusEl.textContent = `Error processing ${file.name}: ${err.detail || res.statusText}`;
-            processBatchBtn.disabled = false;
-            return;
-          }
-          const data = await res.json();
-          jobIds.push(data.job_id);
-        } catch (e) {
-          statusEl.textContent = `Upload failed for ${file.name} — check your connection and try again.`;
-          processBatchBtn.disabled = false;
-          return;
-        }
+      if (!fileQueue.length) return;
+      if (selectedDevice() === 'own' && usage && !usage.own_hardware) {
+        statusEl.innerHTML = 'Processing on your own computer is a Pro feature — <a href="/pricing">see plans</a>, or switch to Peakcut cloud.';
+        return;
       }
+      processBatchBtn.disabled = true;
+      paywall.style.display = 'none';
+      statusEl.textContent = '';
+      const files = fileQueue.slice();
       fileQueue = [];
-      fileInput.value = '';
-      statusEl.textContent = `Processing ${jobIds.length} video(s)…`;
-      pollMultipleJobs(jobIds, Date.now());
+      updateQueueDisplay();
+
+      for (const file of files) {
+        const card = createJobCard(file);
+        let res;
+        try {
+          res = await uploadWithProgress(buildFormData(file), (f) => { card.status(`Uploading… ${Math.round(f * 100)}%`); card.progress(f * 20); });
+        } catch (e) {
+          card.status('Upload failed — check your connection and try again.', true); card.finish();
+          continue;
+        }
+        if (res.status === 402) {
+          card.status(res.body.detail || 'Plan limit reached.', true); card.finish();
+          paywall.style.display = 'block';
+          const skipped = files.slice(files.indexOf(file) + 1);
+          if (skipped.length) statusEl.textContent = `${skipped.length} more video(s) weren't uploaded.`;
+          break; // keep polling the ones already uploaded
+        }
+        if (res.status === 401) {
+          card.status('Please sign in to continue.', true); card.finish();
+          await refreshUsage();
+          break;
+        }
+        if (!res.ok) {
+          card.status(`Error: ${res.body.detail || 'upload failed'}`, true); card.finish();
+          continue;
+        }
+        card.status('Queued…'); card.stage('queued'); card.progress(22);
+        pollJob(res.body.job_id, card);
+        refreshUsage();
+      }
       processBatchBtn.disabled = false;
     });
 
-    function setBusy(busy) {
-      dropZone.classList.toggle('busy', busy);
-      progressTrack.style.display = busy ? 'block' : 'none';
-      if (!busy) progressBar.style.width = '0%';
-    }
-
-    async function handleFile(file) {
-      clipsEl.innerHTML = '';
-      paywall.style.display = 'none';
-      setBusy(true);
-      statusEl.textContent = `Uploading ${file.name}…`;
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('clip_format', clipFormat.value);
-      formData.append('caption_style', captionStyle.value);
-      if (dubLang.value) formData.append('dub_lang', dubLang.value);
-      if (notifyEmail.value.trim()) formData.append('notify_email', notifyEmail.value.trim());
-
-      let jobId;
-      try {
-        const res = await fetch('/process', { method: 'POST', body: formData });
-        if (res.status === 402) {
-          statusEl.textContent = '';
-          setBusy(false);
-          paywall.style.display = 'block';
-          await refreshUsage();
-          return;
-        }
-        if (res.status === 401) {
-          statusEl.textContent = '';
-          setBusy(false);
-          await refreshUsage(); // reveals the sign-in gate
-          return;
-        }
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          statusEl.textContent = `Error: ${err.detail || res.statusText}`;
-          setBusy(false);
-          return;
-        }
-        const data = await res.json();
-        jobId = data.job_id;
-      } catch (e) {
-        statusEl.textContent = 'Upload failed — check your connection and try again.';
-        setBusy(false);
-        return;
-      } finally {
-        fileInput.value = '';
-      }
-
-      pollJob(jobId, Date.now());
-    }
-
-    async function pollMultipleJobs(jobIds, startedAt) {
-      let completed = [];
-      let failed = [];
-      let stopped = false;
-
+    function pollJob(jobId, card) {
+      let failures = 0;
+      const startedAt = Date.now();
       const tick = async () => {
-        if (stopped) return;
-        try {
-          const results = await Promise.all(jobIds.map(jid => fetch(`/job/${jid}`).then(r => r.json().catch(() => null))));
-
-          for (let i = 0; i < jobIds.length; i++) {
-            const data = results[i];
-            if (!data) continue;
-            const jid = jobIds[i];
-
-            if (data.status === 'done' && !completed.includes(jid)) {
-              completed.push(jid);
-              renderClips(data.clips, jid);
-            } else if (data.status === 'failed' && !failed.includes(jid)) {
-              failed.push(jid);
-            }
-          }
-
-          const elapsed = Math.round((Date.now() - startedAt) / 1000);
-          const done = completed.length + failed.length;
-          const allDone = done === jobIds.length;
-
-          if (allDone) {
-            stopped = true;
-            progressBar.style.width = '100%';
-            statusEl.textContent = `Done — ${completed.length}/${jobIds.length} videos processed successfully.`;
-            setBusy(false);
-            await refreshUsage();
-          } else {
-            progressBar.style.width = Math.min(95, (elapsed / (EXPECTED_SECONDS * 1.5)) * 100) + '%';
-            statusEl.textContent = `Processing ${jobIds.length - done} of ${jobIds.length} videos… (${elapsed}s)`;
-            setTimeout(tick, 3000);
-          }
-        } catch (e) {
-          setTimeout(tick, 5000);
-        }
-      };
-      tick();
-    }
-
-    async function pollJob(jobId, startedAt) {
-      let stopped = false;
-      const tick = async () => {
-        if (stopped) return;
         let data;
         try {
           const res = await fetch(`/job/${jobId}`);
           if (res.status === 404) {
-            // the server restarted and lost the in-memory job — don't spin forever
-            stopped = true;
-            statusEl.textContent = 'Sorry — the server restarted mid-job and your video was lost. Your free video was not used up; please try again.';
-            setBusy(false);
-            await refreshUsage();
+            card.status("We lost track of this video (the server restarted). It didn't count toward your limit — please upload it again.", true);
+            card.finish(); refreshUsage();
             return;
           }
           if (!res.ok) throw new Error('bad status');
           data = await res.json();
+          failures = 0;
         } catch (e) {
-          // transient network hiccup or free-tier instance waking — keep trying
+          failures++;
+          if (failures > 60) { card.status('Lost connection to the server. Refresh the page to check again.', true); return; }
           setTimeout(tick, 5000);
           return;
         }
 
-        const elapsed = Math.round((Date.now() - startedAt) / 1000);
-        progressBar.style.width = Math.min(95, (elapsed / EXPECTED_SECONDS) * 100) + '%';
-
         if (data.status === 'queued') {
-          const pos = data.queue_position;
-          statusEl.textContent = pos && pos > 1
-            ? `In queue (position ${pos})… you can leave this page open.`
-            : 'In queue… starting soon.';
+          card.stage('queued');
+          if (data.device === 'own') {
+            card.status(data.device_online
+              ? (data.queue_position > 1 ? `Waiting for your computer — ${data.queue_position - 1} video(s) ahead of this one.` : 'Sending to your computer…')
+              : "Waiting for your computer — start peakcut_worker.py on it (Settings → Your computers) and this will begin automatically.");
+          } else {
+            card.status(data.queue_position > 1 ? `In queue — position ${data.queue_position}. You can leave this tab open.` : 'Starting…');
+          }
           setTimeout(tick, 3000);
         } else if (data.status === 'processing') {
-          const stage = elapsed < 30 ? 'Transcribing speech…' : elapsed < 60 ? 'Analyzing best moments…' : 'Rendering clips…';
-          const pct = Math.min(95, Math.round((elapsed / EXPECTED_SECONDS) * 100));
-          statusEl.textContent = `${stage} (${elapsed}s, ${pct}% done — typically 2–5 minutes total)`;
-          setTimeout(tick, 3000);
+          const label = { transcribing: 'Transcribing speech', finding_moments: 'Finding the best moments', rendering: 'Rendering clips' }[data.stage] || 'Processing';
+          card.stage(data.stage || 'transcribing');
+          card.progress(22 + (data.progress || 0) * 0.78);
+          card.status(`${label}${data.worker_name && data.device === 'own' ? ` on ${data.worker_name}` : ''}… (${data.elapsed}s)`);
+          setTimeout(tick, 2500);
         } else if (data.status === 'done') {
-          stopped = true;
-          progressBar.style.width = '100%';
-          const lang = data.language ? ` (${data.language})` : '';
-          statusEl.textContent = `Done — ${data.clips.length} clips from your ${Math.round(data.duration)}s video${lang}.`;
-          renderClips(data.clips, jobId);
-          setBusy(false);
-          await refreshUsage();
+          card.stage('done'); card.progress(100); card.finish();
+          const mins = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+          card.status(`Done — ${data.clips.length} clip${data.clips.length === 1 ? '' : 's'} from your ${Math.round(data.duration)}s video${data.language && data.language !== 'unknown' ? ` (${data.language})` : ''}.`);
+          renderClips(card, data, jobId);
+          refreshUsage();
+          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification('Your Peakcut clips are ready 🎬');
+          }
         } else if (data.status === 'failed') {
-          stopped = true;
-          statusEl.textContent = data.error || 'Processing failed.';
-          setBusy(false);
-          await refreshUsage();
+          card.status(data.error || 'Processing failed.', true); card.finish();
+          refreshUsage();
         }
       };
       tick();
+      if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (e) {} }
     }
 
-    function viralityColor(v) {
-      if (v >= 80) return '#22c55e';
-      if (v >= 60) return '#eab308';
-      return '#94a3b8';
+    function viralityColor(v) { return v >= 80 ? '#16a34a' : v >= 60 ? '#ca8a04' : '#64748b'; }
+
+    function flash(btn, text) {
+      const old = btn.textContent; btn.textContent = text; setTimeout(() => btn.textContent = old, 1800);
     }
 
-    function copyToClipboard(text, btn) {
-      navigator.clipboard.writeText(text).then(() => {
-        const oldText = btn.textContent;
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => btn.textContent = oldText, 2000);
-      });
-    }
-
-    function renderClips(clips, jobId) {
-      const header = jobId ? `<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center">
-        <h2 style="margin:0;flex:1">Your clips</h2>
-        <a href="/jobs/${jobId}/download/all" class="download" style="white-space:nowrap">📦 Download All as ZIP</a>
-      </div>` : '';
-      clipsEl.innerHTML = header + clips.map((c, idx) => {
-        return `
+    function renderClips(card, data, jobId) {
+      const expires = new Date(data.expires_at * 1000);
+      const bufferUrl = (usage && usage.buffer_url) || 'https://publish.buffer.com';
+      card.el.querySelector('.zip').innerHTML = `<a class="btn" href="/jobs/${encodeURIComponent(jobId)}/download/all">📦 Download all (.zip)</a>
+        <a class="btn ghost" href="${encodeURI(bufferUrl)}" target="_blank" rel="noopener" title="Schedule these to TikTok, Reels and Shorts automatically">🗓 Auto-post with Buffer ↗</a>`;
+      const clipsEl = card.el.querySelector('.clips');
+      clipsEl.innerHTML = data.clips.map((c, idx) => `
         <div class="clip-card">
           <video src="${encodeURI(c.url)}" controls preload="metadata" playsinline></video>
           <div class="meta">
-            <div class="rank">Clip #${c.rank} <span class="virality-badge" style="background:${viralityColor(c.virality_score)}">${c.virality_score}/100 Virality</span></div>
-            <p>"${escapeHtml(c.text)}"</p>
-            <div class="score">${c.start.toFixed(1)}s–${c.end.toFixed(1)}s</div>
+            <div class="rank">Clip #${c.rank} <span class="virality-badge" style="background:${viralityColor(c.virality_score)}">${c.virality_score}/100</span></div>
+            <h3>${escapeHtml(c.title || '')}</h3>
+            <p class="transcript">"${escapeHtml(c.text)}"</p>
+            <div class="tags">${escapeHtml((c.hashtags || []).join(' '))}</div>
+            <div class="score">${c.start.toFixed(1)}s – ${c.end.toFixed(1)}s · ${(c.end - c.start).toFixed(0)}s long</div>
             <div class="actions">
-              <a class="download" href="${encodeURI(c.url)}" download>Download</a>
-              <button class="share-btn" data-clip-index="${idx}">Share</button>
-              <a class="download" href="https://tiktok.com/upload" target="_blank" style="background:var(--accent);flex:1;text-align:center;text-decoration:none">TikTok ↗</a>
+              <a class="btn" href="${encodeURI(c.url)}?download=1" download>⬇ Download</a>
+              <button class="btn accent" data-share="${idx}">Share</button>
+              <button class="btn ghost" data-copy="${idx}">Copy caption</button>
+              <button class="btn ghost" data-buffer="${idx}" title="Downloads the clip, copies the caption and opens Buffer so you can schedule it to TikTok, Reels and Shorts">🗓 Auto-post</button>
+              ${c.srt_url ? `<a class="btn ghost" href="${encodeURI(c.srt_url)}" download>Captions (.srt)</a>` : ''}
             </div>
           </div>
-        </div>
-      `;
-      }).join('');
-      // Wired up here rather than via an inline onclick="...${c.text}..." —
-      // clip text comes from Whisper's transcript of the uploaded video, so
-      // a spoken line containing a double-quote or backslash could break
-      // out of an inline attribute and run arbitrary JS. Keeping the text
-      // in JS memory (never serialized into HTML/attribute strings) avoids
-      // that class of injection entirely.
-      clipsEl.querySelectorAll('.share-btn').forEach(btn => {
-        const c = clips[Number(btn.dataset.clipIndex)];
-        btn.addEventListener('click', () => {
-          copyToClipboard(`"${c.text}"\n\n#shorts #reels #fyp #viral`, btn);
+        </div>`).join('') +
+        `<p class="expiry">⏳ Clips are deleted ${escapeHtml(expires.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} — download the ones you want to keep.</p>` +
+        (usage && !usage.pro ? `<p class="expiry" style="color:var(--muted)">Want these without the watermark and up to 5 clips per video? <a href="/pricing">Go Pro</a>.</p>` : '');
+
+      // Handlers are attached in JS (never via inline attributes) because
+      // clip text comes from the transcript and could contain quotes.
+      const captionFor = (c) => `${c.title || ''}\n\n${(c.hashtags || []).join(' ')}`.trim();
+      // Buffer doesn't accept a video link from another site, so: save the
+      // clip, put the caption on the clipboard, open Buffer's composer.
+      clipsEl.querySelectorAll('[data-buffer]').forEach(btn => {
+        const c = data.clips[Number(btn.dataset.buffer)];
+        btn.addEventListener('click', async () => {
+          window.open(bufferUrl, '_blank', 'noopener');
+          const a = document.createElement('a');
+          a.href = c.url + '?download=1'; a.download = c.file; document.body.appendChild(a); a.click(); a.remove();
+          try { await navigator.clipboard.writeText(captionFor(c)); } catch (e) {}
+          flash(btn, '✓ Clip saved + caption copied — drop it into Buffer');
+        });
+      });
+      clipsEl.querySelectorAll('[data-copy]').forEach(btn => {
+        const c = data.clips[Number(btn.dataset.copy)];
+        btn.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(captionFor(c)); flash(btn, '✓ Copied'); } catch (e) { flash(btn, 'Copy failed'); }
+        });
+      });
+      clipsEl.querySelectorAll('[data-share]').forEach(btn => {
+        const c = data.clips[Number(btn.dataset.share)];
+        btn.addEventListener('click', async () => {
+          // On phones, share the actual video file straight into TikTok/IG/etc.
+          try {
+            if (navigator.canShare) {
+              btn.textContent = 'Preparing…';
+              const blob = await (await fetch(c.url)).blob();
+              const file = new File([blob], c.file, { type: 'video/mp4' });
+              btn.textContent = 'Share';
+              if (navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: c.title, text: captionFor(c) });
+                return;
+              }
+            }
+            await navigator.clipboard.writeText(captionFor(c));
+            flash(btn, '✓ Caption copied — download & post');
+          } catch (e) {
+            btn.textContent = 'Share';
+            if (e && e.name === 'AbortError') return; // user closed the share sheet
+            try { await navigator.clipboard.writeText(captionFor(c)); flash(btn, '✓ Caption copied — download & post'); } catch (e2) {}
+          }
         });
       });
     }
 
     const params = new URLSearchParams(location.search);
-    if (params.get('upgraded') === '1') {
-      statusEl.textContent = '🎉 Pro activated — unlimited videos, no watermark. Thanks for upgrading!';
-      history.replaceState(null, '', '/');
-    } else if (params.get('upgrade_error') === '1') {
-      statusEl.textContent = "Something went wrong confirming your upgrade — if you were charged, contact support and we'll sort it out.";
-      history.replaceState(null, '', '/');
-    } else if (params.get('signed_in') === '1') {
-      statusEl.textContent = "You're signed in — drop a video in to get started.";
-      history.replaceState(null, '', '/');
-    } else if (params.get('auth_error') === 'unverified') {
-      statusEl.textContent = "That Google account's email isn't verified, so we can't use it to sign in — try a different account.";
-      history.replaceState(null, '', '/');
-    } else if (params.get('auth_error') === '1') {
-      statusEl.textContent = 'Sign-in failed — please try again.';
-      history.replaceState(null, '', '/');
+    const notices = {
+      upgraded: ['1', "🎉 You're upgraded — no watermark, more clips per video and priority processing. Thanks!"],
+      upgrade_error: ['1', `Something went wrong confirming your upgrade. If you were charged, email ${CONTACT_EMAIL} and we'll fix it the same day.`],
+      signed_in: ['1', "You're signed in — drop a video in to get started."],
+    };
+    for (const [k, [v, msg]] of Object.entries(notices)) {
+      if (params.get(k) === v) { statusEl.textContent = msg; history.replaceState(null, '', '/'); }
     }
+    if (params.get('auth_error') === 'unverified') { statusEl.textContent = "That Google account's email isn't verified — try a different account."; history.replaceState(null, '', '/'); }
+    else if (params.get('auth_error') === '1') { statusEl.textContent = 'Sign-in failed — please try again.'; history.replaceState(null, '', '/'); }
 
+    loadPresets();
     refreshUsage();
 
-    // ── Simple Chatbot for Customer Support ──────────────────────────────
-    const chatbotData = {
-      "how long": "Usually 2–5 minutes depending on video length. Transcription is typically the longest step.",
-      "what videos work": "Best: podcasts, interviews, talks, sermons, lectures. Avoid: music-only, silent footage.",
-      "why failed": "Most common: video too short, no clear speech, or unsupported codec. Try a longer video with clearer audio.",
-      "what is pro": "Pro ($15/mo) gives you unlimited clips instead of 5/month, removes the watermark, and unlocks dubbing to Spanish/French/Portuguese.",
-      "how download": "Each clip has a download button. Or use 'Download All as ZIP' to get all 3 clips + metadata in one file.",
-      "can i edit": "Peakcut auto-cuts and captions. For further editing, download the MP4 and use CapCut, Adobe Premiere, or similar.",
-      "refund": "We process refunds within 5–7 business days. Contact support@peakcut.example with your order details.",
-      "delete account": "Email support@peakcut.example and we'll delete your data within 24 hours.",
-    };
+    // ── Help widget (keyword FAQ — answers kept in sync with the FAQ above) ──
+    const chatbotData = [
+      [['how long', 'take', 'slow', 'stuck'], 'Usually a few minutes. Each video shows its live stage and queue position. Paid plans skip ahead of the free queue. You can also ask for an email when it\'s done.'],
+      [['mid sentence', 'cut off', 'abrupt'], 'Peakcut only cuts on sentence boundaries or natural pauses and pads each cut. Try "Long" clip length if your speakers take a while to make a point.'],
+      [['what video', 'best', 'work'], 'Best: podcasts, interviews, talks, streams, sermons, lectures. Music-only or silent footage won\'t produce good clips.'],
+      [['fail', 'error', 'didn'], 'Usually: no clear speech, a very short video, or an unusual codec. Failed videos never count toward your limit — try an MP4 with clearer audio.'],
+      [['crop', 'frame', 'cut out', 'face'], 'Change "Framing" to "Show everything + blurred fill" so nobody gets cropped out — great for two-person podcasts.'],
+      [['caption', 'subtitle', 'srt', 'typo'], 'Every clip has a "Captions (.srt)" download you can edit in CapCut, Premiere or YouTube Studio.'],
+      [['pro', 'price', 'cost', 'plan', 'upgrade'], 'Free: 5 videos/mo, 3 clips each. Pro $15/mo: 20 videos, 5 clips, no watermark, dubbing. Pro Plus $29/mo: 50 videos, 8 clips, custom watermark. See /pricing.'],
+      [['cancel', 'unsubscribe'], 'Settings → Manage billing → Cancel. It takes effect at the end of your paid period, no emails needed.'],
+      [['refund', 'charged'], `If something went wrong with a charge, email ${CONTACT_EMAIL} and a human will sort it out. Failed videos are never counted.`],
+      [['download', 'zip', 'save'], 'Use each clip\'s Download button or "Download all (.zip)". Clips are deleted after 24 hours.'],
+      [['delete', 'privacy', 'data'], 'Settings → Delete all my data removes your clips, usage and API keys instantly. Uploads are already deleted once clips are rendered.'],
+      [['edit'], 'Peakcut cuts, reframes and captions. For more editing, download the MP4 + .srt and open them in CapCut or Premiere.'],
+    ];
 
     function initChatbot() {
-      const chatWidget = document.createElement('div');
-      chatWidget.style.cssText = `
-        position: fixed; bottom: 20px; right: 20px; z-index: 999;
-        font-family: system-ui, -apple-system, sans-serif;
-      `;
-      chatWidget.innerHTML = `
-        <button id="chatToggle" style="
-          width: 60px; height: 60px; border-radius: 50%; background: var(--accent);
-          color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          transition: transform 0.2s; display: flex; align-items: center; justify-content: center;
-        ">💬</button>
-        <div id="chatWindow" style="
-          display: none; position: absolute; bottom: 80px; right: 0; width: 360px; max-height: 500px;
-          background: white; border-radius: 12px; box-shadow: 0 5px 40px rgba(0,0,0,0.16); flex-direction: column;
-          overflow: hidden;
-        ">
-          <div style="background: var(--accent); color: white; padding: 16px; font-weight: 600;">
-            Peakcut Support
-            <button id="chatClose" style="float: right; background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
+      const w = document.createElement('div');
+      w.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:999;font-family:system-ui,-apple-system,sans-serif;';
+      w.innerHTML = `
+        <button id="chatToggle" aria-label="Help" style="width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:24px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.15)">💬</button>
+        <div id="chatWindow" style="display:none;position:absolute;bottom:72px;right:0;width:min(360px,calc(100vw - 32px));background:#fff;border-radius:12px;box-shadow:0 5px 40px rgba(0,0,0,.16);flex-direction:column;overflow:hidden">
+          <div style="background:var(--accent);color:#fff;padding:14px 16px;font-weight:600">Peakcut help
+            <button id="chatClose" aria-label="Close" style="float:right;background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1">×</button></div>
+          <div id="chatMessages" style="overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;max-height:340px"></div>
+          <div style="display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)">
+            <input id="chatInput" placeholder="Ask a question…" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px;font-size:14px">
+            <button id="chatSend" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:600">Send</button>
           </div>
-          <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; max-height: 350px;"></div>
-          <div style="display: flex; gap: 8px; padding: 12px; border-top: 1px solid #e3e0f0;">
-            <input id="chatInput" placeholder="Ask a question..." style="flex: 1; border: 1px solid #e3e0f0; border-radius: 6px; padding: 8px; font-size: 14px;">
-            <button id="chatSend" style="background: var(--accent); color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-weight: 600;">Send</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(chatWidget);
-
-      const toggle = document.getElementById('chatToggle');
-      const window_ = document.getElementById('chatWindow');
-      const messages = document.getElementById('chatMessages');
-      const input = document.getElementById('chatInput');
-      const send = document.getElementById('chatSend');
-      const close = document.getElementById('chatClose');
-
-      toggle.addEventListener('click', () => {
-        window_.style.display = window_.style.display === 'none' ? 'flex' : 'none';
-        if (window_.style.display === 'flex' && messages.children.length === 0) {
-          addMessage('Hi! I\'m the Peakcut support bot. Ask me anything about pricing, how it works, troubleshooting, etc.', 'bot');
-        }
+        </div>`;
+      document.body.appendChild(w);
+      const win = $('chatWindow'), messages = $('chatMessages'), input = $('chatInput');
+      function addMessage(text, who) {
+        const m = document.createElement('div');
+        m.style.cssText = `padding:9px 12px;border-radius:8px;font-size:14px;max-width:85%;background:${who === 'bot' ? '#f0ecff' : 'var(--accent)'};color:${who === 'bot' ? 'var(--ink)' : '#fff'};align-self:${who === 'bot' ? 'flex-start' : 'flex-end'}`;
+        m.textContent = text;
+        messages.appendChild(m);
+        messages.scrollTop = messages.scrollHeight;
+      }
+      $('chatToggle').addEventListener('click', () => {
+        const open = win.style.display !== 'flex';
+        win.style.display = open ? 'flex' : 'none';
+        if (open && !messages.children.length) addMessage('Hi! Ask me about pricing, cancelling, failed videos, framing, captions…', 'bot');
+        if (open) input.focus();
       });
-      close.addEventListener('click', () => window_.style.display = 'none');
-
-      send.addEventListener('click', () => {
+      $('chatClose').addEventListener('click', () => win.style.display = 'none');
+      function send() {
         const text = input.value.trim();
         if (!text) return;
         addMessage(text, 'user');
         input.value = '';
         const lower = text.toLowerCase();
-        let found = false;
-        for (const [key, response] of Object.entries(chatbotData)) {
-          if (lower.includes(key)) {
-            setTimeout(() => addMessage(response, 'bot'), 300);
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          setTimeout(() => addMessage("I'm not sure about that. Try emailing support@peakcut.example for help, or check the FAQ above.", 'bot'), 300);
-        }
-      });
-      input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') send.click();
-      });
-
-      function addMessage(text, sender) {
-        const msg = document.createElement('div');
-        msg.style.cssText = `
-          padding: 10px 12px; border-radius: 8px; font-size: 14px;
-          background: ${sender === 'bot' ? '#f0ecff' : 'var(--accent)'}; color: ${sender === 'bot' ? 'var(--ink)' : 'white'};
-          align-self: ${sender === 'bot' ? 'flex-start' : 'flex-end'}; max-width: 85%;
-        `;
-        msg.textContent = text;
-        messages.appendChild(msg);
-        messages.scrollTop = messages.scrollHeight;
+        const hit = chatbotData.find(([keys]) => keys.some(k => lower.includes(k)));
+        setTimeout(() => addMessage(hit ? hit[1] : `I'm not sure — email ${CONTACT_EMAIL} and a human will reply, or check the FAQ above.`, 'bot'), 250);
       }
+      $('chatSend').addEventListener('click', send);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
     }
     initChatbot();
   </script>
