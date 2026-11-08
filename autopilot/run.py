@@ -96,7 +96,8 @@ def main(argv=None) -> int:
             used = {fid for p in ledger[-40:] for fid in (p.get("footage_ids") or [])}
             meta = editorial.render(script, mp4, out / "work", music_track=track, used_footage=used)
             choice = {"motif": "editorial", "script": script["id"], "lines": [script["title"]], "theme": "editorial",
-                      "caption": script["title"], "cta": choice["cta"], "ai_written": bool(script.get("ai"))}
+                      "caption": script["title"], "cta": choice["cta"], "ai_written": bool(script.get("ai")),
+                      "credit": "visuals: pexels" if meta.get("footage_ids") else ""}
             summary(f"## 🎬 editorial — “{script['title']}”\n"
                     f"rendered in {time.time() - t0:.0f}s · {meta['duration']:.1f}s · voice {meta['voice']} · "
                     f"{len(meta['footage_ids'])} stock clips · 🎵 {(meta.get('track') or 'no bed').removesuffix('.wav')}\n")

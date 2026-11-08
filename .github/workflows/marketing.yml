@@ -1,7 +1,7 @@
 name: Marketing autopilot
 
-# Makes one minimal reel and posts it to TikTok + Instagram (via Buffer),
-# twice a day, with no one involved. State (what was posted) is committed back
+# Makes one reel (narrated editorial by default) and posts it to TikTok +
+# Instagram (via Buffer), twice a day, with no one involved. State (what was posted) is committed back
 # to autopilot/state/ so it never repeats itself across runs.
 #
 # Needs one repo secret: BUFFER_API_KEY (channels are found automatically).
@@ -11,9 +11,10 @@ name: Marketing autopilot
 # to your phone so you can add a trending sound). Run "Marketing setup check" first.
 on:
   schedule:
-    # ~11:17 and ~19:43 US Eastern, two strong windows for short-form video
-    - cron: "17 15 * * *"
-    - cron: "43 23 * * *"
+    # GitHub's cron is best-effort (late or skipped runs are common), so wake
+    # hourly; autopilot/due.py posts only when a slot is due (AUTOPILOT_SLOTS,
+    # default 15,23 UTC ≈ 11am / 7pm US Eastern) and picks up any missed slot.
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -59,15 +60,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Is a post due?
+        id: due
+        env:
+          AUTOPILOT_SLOTS: ${{ vars.AUTOPILOT_SLOTS }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; echo "manual run"
+          else python3 autopilot/due.py; fi
+
       - uses: actions/setup-python@v5
+        if: steps.due.outputs.run == 'true'
         with:
           python-version: "3.12"
 
       - uses: actions/setup-node@v4
+        if: steps.due.outputs.run == 'true'
         with:
           node-version: "20"
 
       - name: Install ffmpeg, Playwright + Chromium
+        if: steps.due.outputs.run == 'true'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npm install --prefix autopilot --no-audit --no-fund
@@ -76,6 +88,7 @@ jobs:
 
       - name: Make and post a reel
         id: run
+        if: steps.due.outputs.run == 'true'
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           BUFFER_TIKTOK_CHANNEL_ID: ${{ secrets.BUFFER_TIKTOK_CHANNEL_ID }}
@@ -96,7 +109,7 @@ jobs:
           python -m autopilot.run --platforms "${{ inputs.platforms || 'tiktok,instagram' }}" $ARGS
 
       - name: Keep the video + contact sheet
-        if: always()
+        if: always() && steps.due.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: reel-${{ github.run_id }}
@@ -105,7 +118,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Save state (what was posted)
-        if: always() && inputs.dry_run != true
+        if: always() && steps.due.outputs.run == 'true' && inputs.dry_run != true
         run: |
           git config user.name "peakcut-autopilot"
           git config user.email "autopilot@users.noreply.github.com"

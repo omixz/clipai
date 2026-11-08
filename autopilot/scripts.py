@@ -4,9 +4,11 @@ Each script is a list of beats. A beat is one screen: the spoken line
 (`say`), which words in it are the big keyword (`key`), how the keyword is
 set (`style`: bold | italic | serif), and what's behind it (`scene`).
 
-Scenes: "footage:<pexels search>" (licensed stock footage, needs
-PEXELS_API_KEY; falls back to `alt`), or a generated scene — "dark", "grid",
-"clips", "wave", "timeline", "pc", "count".
+Scenes: "footage:<search>" (real stock video, else a real photo) or
+"photo:<search>" (real photo, else video) from Pexels — needs PEXELS_API_KEY,
+falls back to `alt` — or a designed scene: "dark", "grid", "clips", "wave",
+"timeline", "pc", "count". A "grid" beat may add "photo": "<search>" to put a
+real photo on the collage card.
 
 Every claim here must be true of the product today.
 """
@@ -26,7 +28,7 @@ SCRIPTS: list[dict] = [
         {"say": "They watch forty seconds of it.", "key": "forty seconds", "style": "bold", "scene": "footage:person scrolling phone at night", "alt": "clips"},
         {"say": "Finding those seconds takes hours.", "key": "hours", "style": "serif", "scene": "timeline"},
         {"say": "Peakcut listens for the moments that land,", "key": "land", "style": "italic", "scene": "wave"},
-        {"say": "and cuts them on full sentences.", "key": "full sentences", "style": "bold", "scene": "grid"},
+        {"say": "and cuts them on full sentences.", "key": "full sentences", "style": "bold", "scene": "grid", "photo": "studio microphone closeup"},
         {"say": "One long video in. A week of clips out.", "key": "A week", "style": "italic", "scene": "count"},
     ]},
     {"id": "consistency", "title": "the most consistent creators win.", "beats": [
@@ -38,7 +40,7 @@ SCRIPTS: list[dict] = [
     ]},
     {"id": "mid-sentence", "title": "the clip that ends mid-sentence.", "beats": [
         {"say": "You've seen the clip that ends mid sentence.", "key": "mid sentence", "style": "italic", "scene": "footage:man looking at phone confused", "alt": "dark"},
-        {"say": "It feels cheap.", "key": "cheap", "style": "serif", "scene": "grid"},
+        {"say": "It feels cheap.", "key": "cheap", "style": "serif", "scene": "grid", "photo": "person laughing podcast"},
         {"say": "Most auto clippers cut wherever the timer ends.", "key": "timer", "style": "bold", "scene": "timeline"},
         {"say": "Peakcut waits for the full stop.", "key": "full stop", "style": "italic", "scene": "wave"},
         {"say": "Every clip ends on a finished thought.", "key": "finished thought", "style": "bold", "scene": "clips"},
@@ -58,30 +60,30 @@ SCRIPTS: list[dict] = [
         {"say": "and your own hardware does the work.", "key": "own hardware", "style": "bold", "scene": "pc"},
     ]},
     {"id": "credits", "title": "credits are a tax on creators.", "beats": [
-        {"say": "Most tools sell you credits.", "key": "credits", "style": "italic", "scene": "grid"},
+        {"say": "Most tools sell you credits.", "key": "credits", "style": "italic", "scene": "grid", "photo": "newspaper on table"},
         {"say": "Credits expire.", "key": "expire", "style": "serif", "scene": "footage:hourglass sand", "alt": "dark"},
         {"say": "Credits run out halfway through a project.", "key": "run out", "style": "bold", "scene": "count"},
         {"say": "Peakcut just counts videos.", "key": "counts videos", "style": "italic", "scene": "clips"},
-        {"say": "And cancelling takes one click.", "key": "one click", "style": "bold", "scene": "grid"},
+        {"say": "And cancelling takes one click.", "key": "one click", "style": "bold", "scene": "grid", "photo": "phone screen notifications"},
     ]},
     {"id": "attention-myth", "title": "attention spans aren't short.", "beats": [
         {"say": "People don't have short attention spans.", "key": "short", "style": "italic", "scene": "footage:crowd walking city", "alt": "dark"},
-        {"say": "They have standards.", "key": "standards", "style": "serif", "scene": "grid"},
+        {"say": "They have standards.", "key": "standards", "style": "serif", "scene": "grid", "photo": "film camera on desk"},
         {"say": "A good clip earns the next second.", "key": "next second", "style": "bold", "scene": "wave"},
         {"say": "Peakcut finds the parts of your video that earn it.", "key": "earn it", "style": "italic", "scene": "clips"},
     ]},
     {"id": "captions", "title": "most people watch on mute.", "beats": [
         {"say": "Most people scroll with the sound off.", "key": "sound off", "style": "italic", "scene": "footage:woman on train with phone", "alt": "dark"},
-        {"say": "No captions, no viewers.", "key": "no viewers", "style": "bold", "scene": "grid"},
+        {"say": "No captions, no viewers.", "key": "no viewers", "style": "bold", "scene": "grid", "photo": "hands typing laptop night"},
         {"say": "Peakcut burns in captions timed to every word,", "key": "every word", "style": "serif", "scene": "clips"},
         {"say": "and hands you the caption file to edit.", "key": "caption file", "style": "italic", "scene": "timeline"},
     ]},
     {"id": "framing", "title": "stop cropping your guests out.", "beats": [
         {"say": "Vertical crops cut your guest out of frame.", "key": "out of frame", "style": "italic", "scene": "footage:two people podcast interview", "alt": "dark"},
         {"say": "So Peakcut gives you three ways to frame it.", "key": "three ways", "style": "bold", "scene": "clips"},
-        {"say": "Fill the screen.", "key": "Fill", "style": "serif", "scene": "grid"},
-        {"say": "Show everything.", "key": "everything", "style": "italic", "scene": "grid"},
-        {"say": "Or keep the bars.", "key": "bars", "style": "bold", "scene": "grid"},
+        {"say": "Fill the screen.", "key": "Fill", "style": "serif", "scene": "grid", "photo": "headphones on desk"},
+        {"say": "Show everything.", "key": "everything", "style": "italic", "scene": "grid", "photo": "subway commuter"},
+        {"say": "Or keep the bars.", "key": "bars", "style": "bold", "scene": "grid", "photo": "photographer framing shot"},
     ]},
     {"id": "editor", "title": "you don't need an editor for this.", "beats": [
         {"say": "Clipping a podcast used to need an editor.", "key": "an editor", "style": "italic", "scene": "footage:video editor working at night", "alt": "timeline"},
@@ -115,7 +117,7 @@ def script_problems(s: dict) -> list[str]:
         if b.get("style") not in STYLES:
             probs.append(f"beat {i}: bad style")
         scene = b.get("scene", "")
-        if not (scene in SCENES or scene.startswith("footage:")):
+        if not (scene in SCENES or scene.startswith(("footage:", "photo:"))):
             probs.append(f"beat {i}: bad scene")
         if BANNED.search(say):
             probs.append(f"beat {i}: banned claim: {BANNED.search(say).group(0)}")

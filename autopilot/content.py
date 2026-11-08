@@ -253,7 +253,8 @@ def hashtags(platform: str) -> str:
 
 
 def post_text(choice: dict, platform: str) -> str:
+    credit = f"\n{choice['credit']}" if choice.get("credit") else ""
     if platform == "instagram":
         # hashtags go in the first comment on Instagram (see publish.py)
-        return f"{choice['caption']}\n\n{choice['cta']}"
-    return f"{choice['caption']}\n\n{choice['cta']}\n\n{hashtags(platform)}"
+        return f"{choice['caption']}\n\n{choice['cta']}{credit}"
+    return f"{choice['caption']}\n\n{choice['cta']}{credit}\n\n{hashtags(platform)}"
