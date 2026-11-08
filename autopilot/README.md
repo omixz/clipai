@@ -12,7 +12,8 @@ This is the business-essay look used by channels like Metro Media House. Each re
 
 Scripts live in `scripts.py`: 10 built in, plus optional Gemini-written ones, all checked by the claims guard. Rotation is least-recently-used.
 
-- **Footage:** add the repo secret `PEXELS_API_KEY`; your YT-AUTO repo already has one you can reuse. Pexels footage is free for commercial use. Without the key, scenes fall back to the designed ones.
+- **Real photos and footage:** stock video, full-bleed real photos with a slow push-in, and real photos taped onto the grid-paper collage cards, all from Pexels (licensed for commercial use; posts credit "visuals: pexels"). Scraped Pinterest or Google images and recognisable celebrities aren't used: those belong to their photographers or subjects, and that's what gets commercial posts taken down.
+- **Footage key:** add the repo secret `PEXELS_API_KEY`; your YT-AUTO repo already has one you can reuse. Pexels footage is free for commercial use. Without the key, scenes fall back to the designed ones.
 - **Line-art reels instead:** set the repo variable `AUTOPILOT_FORMAT=minimal`, or pick `format: minimal` on a manual run.
 - **Fallback:** if the editorial render ever fails (for example, the voice service is down), that run posts a minimal reel instead of skipping.
 
@@ -69,7 +70,7 @@ The `growth` motif and gold theme give the aspirational, momentum feel: one reco
 4. **Preview.** Run **Marketing autopilot** with `dry_run` ticked and download the `reel-…` artifact (the mp4 plus a contact sheet with the platform UI areas marked).
 5. **Set your bio link** on TikTok and Instagram to your Peakcut URL. Every video says "link in bio".
 
-That's it. From then on it posts at about 11:17 and 19:43 US Eastern every day. You can change `cron` in `.github/workflows/marketing.yml`.
+That's it. It posts twice a day, by default in the 15:00 and 23:00 UTC slots (about 11am and 7pm US Eastern). GitHub's cron often runs late or skips runs entirely, so the workflow wakes every hour and `due.py` posts only when a slot is due. A skipped slot is picked up within the next 3 hours. Change the slots with the repo variable `AUTOPILOT_SLOTS` (e.g. `14,19,23` for three posts a day).
 
 ## Run it locally
 

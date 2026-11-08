@@ -75,6 +75,13 @@ html, body { width: 1080px; height: 1920px; overflow: hidden; background: transp
       return (t, lt) => { a.style.transform = `translate(${Math.sin(t * .5) * 60}px,${lt * 30}px)`; c.style.transform = `translate(${-lt * 40}px,${Math.cos(t * .4) * 50}px)`; };
     },
     grid(s, b) {
+      if (b.photo) {
+        // a real photo, cut out and taped onto the grid paper (magazine collage)
+        const card = mk('div', 'card', s, 'left:250px;top:1080px;width:580px;height:560px;padding:18px;transform:rotate(-2deg)');
+        mk('div', null, card, `width:100%;height:100%;background:url('${b.photo}') center/cover;filter:grayscale(.15) contrast(1.05)`);
+        const tape = mk('div', null, s, 'position:absolute;left:470px;top:1056px;width:150px;height:44px;background:rgba(255,236,170,.75);transform:rotate(-5deg)');
+        return (t, lt) => { const p = P(lt, .05, .6); card.style.transform = `rotate(${lerp(-7, -2, p)}deg) translateY(${(1 - p) * 140}px) scale(${1 + lt * .01})`; card.style.opacity = p; tape.style.opacity = P(lt, .35, .2); };
+      }
       const card = mk('div', 'card', s, 'left:300px;top:1150px;width:480px;height:330px;transform:rotate(-2deg)');
       mk('div', null, card, "position:absolute;left:28px;top:26px;font:italic 400 64px/1 'Instrument Serif';color:#111").textContent = 'the clip.';
       for (let i = 0; i < 3; i++) mk('div', null, card, `position:absolute;left:28px;top:${130 + i * 46}px;height:14px;border-radius:7px;background:#d9d7d0;width:${[400, 340, 260][i]}px`);

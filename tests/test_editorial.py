@@ -95,3 +95,42 @@ def test_editorial_post_records_script(monkeypatch, tmp_path):
     rec = json.loads((tmp_path / "ledger.json").read_text())["posts"][-1]
     assert rec["motif"] == "editorial" and rec["script"] == scripts.SCRIPTS[0]["id"] and rec["footage_ids"] == [1, 2]
     assert scripts.SCRIPTS[0]["title"] in texts["tiktok"] and "link in bio" in texts["tiktok"]
+
+
+def test_due_check_catches_missed_slots():
+    import datetime as dt
+    from autopilot import due
+    U = dt.timezone.utc
+    at = lambda h, m=0, d=8: dt.datetime(2026, 11, d, h, m, tzinfo=U)  # noqa: E731
+    slots = [15, 23]
+    assert not due.is_due(at(14, 17), [], slots)                      # before the slot
+    assert due.is_due(at(15, 17), [], slots)                          # on time
+    assert due.is_due(at(17, 17), [], slots)                          # the 15:17 run was skipped -> catch up
+    assert not due.is_due(at(18, 17), [], slots)                      # window over
+    assert not due.is_due(at(16, 17), [{"at": at(15, 20).isoformat()}], slots)   # already posted this slot
+    assert due.is_due(at(1, 17, d=9), [{"at": at(15, 20).isoformat()}], slots)   # 23:00 window crosses midnight
+
+
+def test_photo_and_video_backgrounds_composite(tmp_path):
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    img, vid = tmp_path / "p.jpg", tmp_path / "v.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1200x1800", "-frames:v", "1", str(img)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=720x1280:r=30:d=4", "-pix_fmt", "yuv420p", str(vid)], check=True)
+    tl = {"beats": [{"start": 0, "end": 1.0}, {"start": 1.0, "end": 2.0}, {"start": 2.0, "end": 2.6}], "end": 2.6}
+    out = tmp_path / "bg.mp4"
+    editorial.background(tl, {0: img, 2: vid}, out)
+    dur = editorial._probe(out)
+    assert dur == pytest.approx(2.6 + editorial.END_CARD, abs=0.15)
+
+
+def test_photo_scene_falls_back_without_key(monkeypatch):
+    from autopilot import footage
+    monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+    assert footage.find_any("anything", set(), None) is None
+    for s in scripts.SCRIPTS:
+        for b in s["beats"]:
+            if b["scene"].startswith(("footage:", "photo:")):
+                assert b.get("alt") in scripts.SCENES, (s["id"], b)

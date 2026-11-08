@@ -75,22 +75,27 @@ def _probe(path: Path) -> float:
 
 
 def background(timeline: dict, clips: dict[int, Path], out: Path):
-    """Footage for footage beats (cover-cropped, graded, slow push-in),
-    black elsewhere; the overlay paints the designed scenes on top."""
-    inputs, chains = [], []
+    """Real footage/photos for those beats (cover-cropped, graded, slow
+    push-in), black elsewhere; the overlay paints designed scenes on top."""
+    inputs, chains, n_in = [], [], 0
     segs = [(b["end"] - b["start"], clips.get(i)) for i, b in enumerate(timeline["beats"])]
     segs.append((END_CARD, None))
     for k, (dur, clip) in enumerate(segs):
         dur = max(0.1, dur)
         if clip:
-            src_len = _probe(clip)
-            ss = max(0.0, min(1.0, src_len - dur - 0.1))
-            inputs += ["-ss", f"{ss:.2f}", "-t", f"{dur + 0.2:.2f}", "-i", str(clip)]
+            if clip.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                inputs += ["-loop", "1", "-framerate", str(FPS), "-t", f"{dur + 0.2:.2f}", "-i", str(clip)]
+            else:
+                ss = max(0.0, min(1.0, _probe(clip) - dur - 0.1))
+                inputs += ["-ss", f"{ss:.2f}", "-t", f"{dur + 0.2:.2f}", "-i", str(clip)]
             frames = int(dur * FPS) + 6
+            # alternate push-in and slow drift so consecutive shots don't feel identical
+            z = f"1+0.07*on/{frames}" if k % 2 == 0 else f"1.08-0.05*on/{frames}"
             chains.append(
-                f"[{len(inputs) // 6 - 1}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-                f"zoompan=z='1+0.07*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
+                f"[{n_in}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
                 f"eq=contrast=1.08:saturation=0.82:brightness=-0.03,trim=duration={dur:.3f},setpts=PTS-STARTPTS,setsar=1[s{k}]")
+            n_in += 1
         else:
             chains.append(f"color=c=0x0a0a0b:s={W}x{H}:r={FPS}:d={dur:.3f},setsar=1[s{k}]")
     graph = ";".join(chains) + ";" + "".join(f"[s{k}]" for k in range(len(segs))) + f"concat=n={len(segs)}:v=1:a=0[v]"
@@ -112,8 +117,9 @@ def render(script: dict, out_mp4: Path, work: Path, music_track: Path | None = N
     # footage for footage beats, falling back to the designed alt scene
     clips, used, footage_ids = {}, set(used_footage or ()), []
     for i, (b, tb) in enumerate(zip(script["beats"], timeline["beats"])):
-        if b["scene"].startswith("footage:"):
-            got = footage.find(b["scene"].split(":", 1)[1], used, work / "footage") if footage.available() else None
+        kind, _, query = b["scene"].partition(":")
+        if kind in ("footage", "photo"):
+            got = footage.find_any(query, used, work / "footage", prefer="video" if kind == "footage" else "photo")
             if got:
                 clips[i], fid = got
                 used.add(fid)
@@ -121,6 +127,13 @@ def render(script: dict, out_mp4: Path, work: Path, music_track: Path | None = N
                 tb["scene"] = "footage"
             else:
                 tb["scene"] = b.get("alt", "dark")
+        if tb["scene"] == "grid" and b.get("photo"):
+            # a real photo as the cut-out on the grid-paper collage
+            got = footage.find_photo(b["photo"], used, work / "footage")
+            if got:
+                used.add(got[1])
+                footage_ids.append(got[1])
+                tb["photo"] = got[0].resolve().as_uri()
 
     page = build_page(timeline, work / "editorial.html")
     overlay = work / "overlay.mov"
