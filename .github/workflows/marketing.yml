@@ -25,6 +25,11 @@ on:
         type: choice
         default: auto
         options: [auto, growth, sentence, cut, waveform, split, credits, computer]
+      format:
+        description: "Reel format"
+        type: choice
+        default: editorial
+        options: [editorial, minimal]
       platforms:
         description: "Where to post"
         type: choice
@@ -67,7 +72,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npm install --prefix autopilot --no-audit --no-fund
           npx --prefix autopilot playwright install --with-deps chromium
-          pip install requests numpy
+          pip install requests numpy edge-tts
 
       - name: Make and post a reel
         id: run
@@ -76,6 +81,8 @@ jobs:
           BUFFER_TIKTOK_CHANNEL_ID: ${{ secrets.BUFFER_TIKTOK_CHANNEL_ID }}
           BUFFER_INSTAGRAM_CHANNEL_ID: ${{ secrets.BUFFER_INSTAGRAM_CHANNEL_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          AUTOPILOT_FORMAT: ${{ vars.AUTOPILOT_FORMAT || 'editorial' }}
           AUTOPILOT_BEAT_STYLE: ${{ vars.AUTOPILOT_BEAT_STYLE }}
           AUTOPILOT_BEATS: ${{ vars.AUTOPILOT_BEATS || '1' }}
           TIKTOK_TREND_HANDOFF: ${{ (inputs.trend_handoff || vars.TIKTOK_TREND_HANDOFF == '1') && '1' || '0' }}
@@ -85,6 +92,7 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
           if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
           if [ -n "${{ inputs.motif }}" ] && [ "${{ inputs.motif }}" != "auto" ]; then ARGS="$ARGS --motif ${{ inputs.motif }}"; fi
+          if [ -n "${{ inputs.format }}" ]; then ARGS="$ARGS --format ${{ inputs.format }}"; fi
           python -m autopilot.run --platforms "${{ inputs.platforms || 'tiktok,instagram' }}" $ARGS
 
       - name: Keep the video + contact sheet

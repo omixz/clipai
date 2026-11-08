@@ -144,12 +144,12 @@ def test_run_posts_each_platform_independently(monkeypatch, tmp_path):
         return "tt1"
 
     monkeypatch.setattr(publish, "post_video", fake_post)
-    code = run.main(["--out", str(tmp_path / "out")])
+    code = run.main(["--out", str(tmp_path / "out"), "--format", "minimal"])
     assert code == 2  # partial success
     ledger = json.loads((tmp_path / "ledger.json").read_text())["posts"]
     assert ledger[0]["platforms"]["tiktok"]["ok"] and not ledger[0]["platforms"]["instagram"]["ok"]
     # a second run right away is skipped (no double posting)
-    assert run.main(["--out", str(tmp_path / "out")]) == 0
+    assert run.main(["--out", str(tmp_path / "out"), "--format", "minimal"]) == 0
     assert len(json.loads((tmp_path / "ledger.json").read_text())["posts"]) == 1
 
 

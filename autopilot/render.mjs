@@ -19,7 +19,9 @@ try { playwright = require('playwright'); } catch {
 
 const argv = process.argv.slice(2);
 const metaOnly = argv.includes('--meta');
-const [page, out, fpsArg] = argv.filter(a => a !== '--meta');
+// --alpha: transparent PNG frames into a lossless .mov, for compositing over footage
+const alpha = argv.includes('--alpha');
+const [page, out, fpsArg] = argv.filter(a => a !== '--meta' && a !== '--alpha');
 const fps = Number(fpsArg || 30);
 if (!page || (!out && !metaOnly)) { console.error('usage: node render.mjs page.html out.mp4 [fps]'); process.exit(2); }
 
@@ -37,14 +39,17 @@ try {
   if (metaOnly) { console.log(JSON.stringify(meta)); process.exit(0); }
   const frames = Math.round(meta.duration * fps);
 
-  const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out],
+  const encode = alpha
+    ? ['-c:v', 'png', '-i', '-', '-c:v', 'png', '-pix_fmt', 'rgba', out]
+    : ['-c:v', 'mjpeg', '-i', '-', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out];
+  const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), ...encode],
     { stdio: ['pipe', 'inherit', 'inherit'] });
   const done = new Promise((res, rej) => ff.on('close', c => (c === 0 ? res() : rej(new Error('ffmpeg exited ' + c)))));
 
   for (let f = 0; f < frames; f++) {
     await p.evaluate(t => window.SCENE.render(t), f / fps);
-    const buf = await p.screenshot({ type: 'jpeg', quality: 95 });
+    const buf = alpha ? await p.screenshot({ type: 'png', omitBackground: true })
+                      : await p.screenshot({ type: 'jpeg', quality: 95 });
     if (!ff.stdin.write(buf)) await new Promise(r => ff.stdin.once('drain', r));
   }
   ff.stdin.end();

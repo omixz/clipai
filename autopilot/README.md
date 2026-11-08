@@ -1,4 +1,23 @@
-# Marketing autopilot: minimal reels for TikTok and Instagram
+# Marketing autopilot: reels for TikTok and Instagram
+
+## Default format: editorial (narrated kinetic type)
+
+This is the business-essay look used by channels like Metro Media House. Each reel is a 12–20 second narrated mini-essay:
+- **Voice:** a calm documentary voice (Microsoft neural voices via `edge-tts`, the same route YT-AUTO uses).
+- **Captions:** two-tier, word by word. A small light lead-in sits over one **huge keyword** in heavy grotesk, heavy italic or serif italic (Inter / Instrument Serif, both OFL).
+- **Transitions:** a blurred ghost of the last keyword zooms out behind each cut.
+- **Backgrounds:** cinematic stock footage (graded, slow push-in), or designed scenes when there's no footage: grid-paper collage, Peakcut clip cards, waveform, timeline, PC and a week calendar.
+- **Finish:** film grain and a vignette, then the **peakcut.** end card.
+- **Audio:** the voice sits over a ducked beat, mixed to -14 LUFS.
+
+Scripts live in `scripts.py`: 10 built in, plus optional Gemini-written ones, all checked by the claims guard. Rotation is least-recently-used.
+
+- **Footage:** add the repo secret `PEXELS_API_KEY`; your YT-AUTO repo already has one you can reuse. Pexels footage is free for commercial use. Without the key, scenes fall back to the designed ones.
+- **Line-art reels instead:** set the repo variable `AUTOPILOT_FORMAT=minimal`, or pick `format: minimal` on a manual run.
+- **Fallback:** if the editorial render ever fails (for example, the voice service is down), that run posts a minimal reel instead of skipping.
+
+## Minimal format: line-art reels
+
 
 Twice a day, with nobody involved, GitHub Actions:
 

@@ -52,6 +52,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--motif", choices=video.MOTIFS)
+    ap.add_argument("--format", choices=["editorial", "minimal"], default=os.environ.get("AUTOPILOT_FORMAT") or "editorial",
+                    help="editorial = narrated kinetic-type essay (default); minimal = line-art reel")
+    ap.add_argument("--script", help="editorial: force a script id")
     ap.add_argument("--platforms", default=",".join(PLATFORMS))
     ap.add_argument("--out", default=str(HERE / "out"))
     ap.add_argument("--force", action="store_true", help="post even if the last post was under 3h ago")
@@ -85,14 +88,30 @@ def main(argv=None) -> int:
             style = beats.STYLES[0]
         gen = beats.generate(style, 24, out / "work" / f"generated-{style}.wav", seed=int(now.timestamp()))
         track = Path(gen["path"])
-    meta = video.render({"motif": choice["motif"], "lines": choice["lines"], "theme": choice.get("theme"), "cta": "link in bio"},
-                        mp4, out / "work", music_track=track, quiet_variant=args.trend_handoff and "tiktok" in platforms)
+    meta = None
+    if args.format == "editorial" and not args.motif:
+        from . import editorial, scripts
+        script = next((s for s in scripts.all_scripts() if s["id"] == args.script), None) or scripts.pick(ledger)
+        try:
+            used = {fid for p in ledger[-40:] for fid in (p.get("footage_ids") or [])}
+            meta = editorial.render(script, mp4, out / "work", music_track=track, used_footage=used)
+            choice = {"motif": "editorial", "script": script["id"], "lines": [script["title"]], "theme": "editorial",
+                      "caption": script["title"], "cta": choice["cta"], "ai_written": bool(script.get("ai"))}
+            summary(f"## 🎬 editorial — “{script['title']}”\n"
+                    f"rendered in {time.time() - t0:.0f}s · {meta['duration']:.1f}s · voice {meta['voice']} · "
+                    f"{len(meta['footage_ids'])} stock clips · 🎵 {(meta.get('track') or 'no bed').removesuffix('.wav')}\n")
+        except Exception as e:  # noqa: BLE001 — never skip a post: fall back to the minimal reel
+            summary(f"⚠️ editorial render failed ({str(e)[:200]}); posting a minimal reel instead.")
+            meta = None
+    if meta is None:
+        meta = video.render({"motif": choice["motif"], "lines": choice["lines"], "theme": choice.get("theme"), "cta": "link in bio"},
+                            mp4, out / "work", music_track=track, quiet_variant=args.trend_handoff and "tiktok" in platforms)
+        sound = (f"🎵 {meta['track'].removesuffix('.wav')} ({meta['bpm']:.0f} bpm, beat-synced)" if meta.get("track")
+                 else "🎵 soft synth pad")
+        summary(f"## 🎬 {choice['motif']} — “{' / '.join(choice['lines'])}”\n"
+                f"rendered in {time.time() - t0:.0f}s · {choice.get('theme', 'dark')} · {sound}"
+                f"{' · lines written by Gemini' if choice['ai_written'] else ''}\n")
     video.contact_sheet(mp4, out / "sheet.jpg")
-    sound = (f"🎵 {meta['track'].removesuffix('.wav')} ({meta['bpm']:.0f} bpm, beat-synced)" if meta.get("track")
-             else "🎵 soft synth pad")
-    summary(f"## 🎬 {choice['motif']} — “{' / '.join(choice['lines'])}”\n"
-            f"rendered in {time.time() - t0:.0f}s · {choice.get('theme', 'dark')} · {sound}"
-            f"{' · lines written by Gemini' if choice['ai_written'] else ''}\n")
 
     if args.dry_run:
         summary(f"Dry run — not posted. Video: `{mp4}`")
@@ -100,8 +119,9 @@ def main(argv=None) -> int:
 
     from . import publish
     record = {"at": now.isoformat(timespec="seconds"), "id": run_id,
-              **{k: choice.get(k) for k in ("motif", "lines", "theme", "caption", "ai_written")},
-              "track": (meta.get("track") or "").removesuffix(".wav") or None, "platforms": {}}
+              **{k: choice.get(k) for k in ("motif", "script", "lines", "theme", "caption", "ai_written")},
+              "track": (meta.get("track") or "").removesuffix(".wav") or None,
+              "voice": meta.get("voice"), "footage_ids": meta.get("footage_ids"), "platforms": {}}
     try:
         url = publish.host_on_github_release(mp4, f"{run_id}.mp4")
         record["video_url"] = url
