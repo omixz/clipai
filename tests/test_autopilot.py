@@ -208,3 +208,15 @@ def test_beat_detection_and_warp(tmp_path):
         assert abs(v / info["period"] - round(v / info["period"])) < 1e-3  # every anchor on a beat
     # the warp is monotonic and invertible
     assert music.video_time(anchors, 6.0) > music.video_time(anchors, 3.15)
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.parametrize("style", ["phonk", "house", "lofi"])
+def test_generated_beats_have_an_exact_grid(tmp_path, style):
+    import numpy as np
+    from autopilot import beats, music
+    r = beats.generate(style, 12, tmp_path / f"{style}.wav", seed=1)
+    info = music.analyze(tmp_path / f"{style}.wav")
+    assert info["bpm"] == r["bpm"]
+    assert np.allclose(np.diff(info["beats"]), 60 / r["bpm"])
+    assert beats.pick_style(["phonk", "house"]) == "lofi"

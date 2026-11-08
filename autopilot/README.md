@@ -21,6 +21,8 @@ Twice a day, with nobody involved, GitHub Actions:
 
 ## Sound: beat-synced music, and real trending sounds
 
+- **Generated beats (default, fully automatic).** Each post gets an original backing track synthesized in code, rotating through **phonk → house → lo-fi**, the styles all over short video right now. The animation is warped to its exact beat grid, and the mix is normalized to TikTok/Instagram's -14 LUFS. Nothing can be flagged for copyright. Pin one style with the repo variable `AUTOPILOT_BEAT_STYLE=phonk|house|lofi`, or turn beats off with `AUTOPILOT_BEATS=0`.
+
 - **Music library.** Put licensed tracks in `assets/music/` (see the README there for safe sources). Each post:
   - takes the next track in rotation;
   - detects its tempo and beats (to within about one frame);

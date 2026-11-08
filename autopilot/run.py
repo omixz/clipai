@@ -76,10 +76,20 @@ def main(argv=None) -> int:
     mp4 = out / "reel.mp4"
     t0 = time.time()
     track = music.pick_track([p.get("track") for p in ledger if p.get("track")])
+    if not track and os.environ.get("AUTOPILOT_BEATS", "1") != "0":
+        # no tracks of your own: generate an original beat in a trending style
+        from . import beats
+        style = os.environ.get("AUTOPILOT_BEAT_STYLE") or beats.pick_style(
+            [p["track"].split("-")[1] for p in ledger if str(p.get("track", "")).startswith("generated-")])
+        if style not in beats.STYLES:
+            style = beats.STYLES[0]
+        gen = beats.generate(style, 24, out / "work" / f"generated-{style}.wav", seed=int(now.timestamp()))
+        track = Path(gen["path"])
     meta = video.render({"motif": choice["motif"], "lines": choice["lines"], "theme": choice.get("theme"), "cta": "link in bio"},
                         mp4, out / "work", music_track=track, quiet_variant=args.trend_handoff and "tiktok" in platforms)
     video.contact_sheet(mp4, out / "sheet.jpg")
-    sound = f"🎵 {meta['track']} ({meta['bpm']:.0f} bpm, beat-synced)" if meta.get("track") else "🎵 synth pad (add tracks to autopilot/assets/music/)"
+    sound = (f"🎵 {meta['track'].removesuffix('.wav')} ({meta['bpm']:.0f} bpm, beat-synced)" if meta.get("track")
+             else "🎵 soft synth pad")
     summary(f"## 🎬 {choice['motif']} — “{' / '.join(choice['lines'])}”\n"
             f"rendered in {time.time() - t0:.0f}s · {choice.get('theme', 'dark')} · {sound}"
             f"{' · lines written by Gemini' if choice['ai_written'] else ''}\n")
@@ -91,7 +101,7 @@ def main(argv=None) -> int:
     from . import publish
     record = {"at": now.isoformat(timespec="seconds"), "id": run_id,
               **{k: choice.get(k) for k in ("motif", "lines", "theme", "caption", "ai_written")},
-              "track": meta.get("track"), "platforms": {}}
+              "track": (meta.get("track") or "").removesuffix(".wav") or None, "platforms": {}}
     try:
         url = publish.host_on_github_release(mp4, f"{run_id}.mp4")
         record["video_url"] = url

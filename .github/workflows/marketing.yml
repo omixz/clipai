@@ -76,6 +76,8 @@ jobs:
           BUFFER_TIKTOK_CHANNEL_ID: ${{ secrets.BUFFER_TIKTOK_CHANNEL_ID }}
           BUFFER_INSTAGRAM_CHANNEL_ID: ${{ secrets.BUFFER_INSTAGRAM_CHANNEL_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AUTOPILOT_BEAT_STYLE: ${{ vars.AUTOPILOT_BEAT_STYLE }}
+          AUTOPILOT_BEATS: ${{ vars.AUTOPILOT_BEATS || '1' }}
           TIKTOK_TREND_HANDOFF: ${{ (inputs.trend_handoff || vars.TIKTOK_TREND_HANDOFF == '1') && '1' || '0' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -120,7 +120,7 @@ def render(spec: dict, out_mp4: Path, workdir: Path, fps: int = 30, music_track:
         mux(["-ss", f"{start:.3f}", "-t", f"{d + 0.5:.3f}", "-i", str(music_track), "-i", str(chime)],
             f"[1:a]aresample=44100,afade=t=in:d=0.02,afade=t=out:st={max(0, d - 1.1):.2f}:d=1.1,"
             f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100[m];[2:a]volume=0.55[c];"
-            f"[m][c]amix=inputs=2:duration=first:normalize=0[a]", out_mp4)
+            f"[m][c]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.7:attack=2:release=60:level=disabled[a]", out_mp4)
         meta.update(track=Path(music_track).name, bpm=float(info["bpm"]), track_start=round(start, 2), warp=spec.get("warp"))
     else:
         mux(["-i", str(pad_wav)], None, out_mp4)
