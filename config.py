@@ -16,7 +16,7 @@
 #    session, and anyone who has it could forge one.
 #    Sign-in is a soft requirement: while GOOGLE_CLIENT_ID is still the
 #    placeholder below, the site keeps working exactly as it does now
-#    (anonymous, cookie-tracked, 1 free video). The moment you fill in real
+#    (anonymous, cookie-tracked, FREE_LIMIT videos/month). The moment you fill in real
 #    credentials, sign-in becomes required and the free-video limit switches
 #    from "per browser cookie" to "per Google account" — closing the
 #    clear-your-cookies-and-get-another-free-video loophole, which is exactly
@@ -42,6 +42,20 @@ GOOGLE_SIGNIN_CONFIGURED = (
     and GOOGLE_CLIENT_SECRET != "REPLACE_ME"
 )
 
+STRIPE_CONFIGURED = "REPLACE_ME" not in STRIPE_SECRET_KEY and STRIPE_SECRET_KEY.startswith(("sk_", "rk_"))
+
+if GOOGLE_SIGNIN_CONFIGURED and "REPLACE_ME" in SESSION_SECRET_KEY:
+    # The default secret is public (it's in this file), so anyone could forge
+    # an account cookie with it. Use a random one instead: sign-ins then reset
+    # on every restart, which is annoying but safe — set the env var to fix.
+    import logging
+    import secrets as _secrets
+    logging.getLogger("clipai.config").error(
+        "SESSION_SECRET_KEY is not set — using a random per-process secret. "
+        "Set SESSION_SECRET_KEY (openssl rand -hex 32) so sign-ins survive restarts."
+    )
+    SESSION_SECRET_KEY = _secrets.token_hex(32)
+
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "re_REPLACE_ME")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "Peakcut <onboarding@resend.dev>")
 EMAIL_CONFIGURED = RESEND_API_KEY != "re_REPLACE_ME"
@@ -49,6 +63,19 @@ EMAIL_CONFIGURED = RESEND_API_KEY != "re_REPLACE_ME"
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "support@peakcut.example")
 
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
+# Videos per calendar month (UTC) for each plan — keep in sync with pricing.html.
 FREE_LIMIT = int(os.environ.get("FREE_LIMIT", "5"))
+PRO_LIMIT = int(os.environ.get("PRO_LIMIT", "20"))
+PRO_PLUS_LIMIT = int(os.environ.get("PRO_PLUS_LIMIT", "50"))
+# Clips generated per video for each plan.
+MAX_CLIPS = {"free": 3, "pro": 5, "plus": 8}
+# API calls (videos) per calendar month, shared across all of a user's keys.
+API_LIMITS = {
+    "free": int(os.environ.get("API_FREE_LIMIT", "10")),
+    "pro": int(os.environ.get("API_PRO_LIMIT", "500")),
+    "plus": int(os.environ.get("API_PLUS_LIMIT", "2000")),
+}
+MAX_API_KEYS_PER_USER = 5
+JOB_RETENTION_HOURS = 24
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "300"))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}

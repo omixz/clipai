@@ -65,6 +65,9 @@
   .message { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
   .message.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
   .message.error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .key-item { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .notice { background:#f1ecff; border-radius:10px; padding:12px 14px; font-size:0.88rem; margin-bottom:12px; }
+  @media (max-width:560px){ .wrap{ padding:0 16px; } }
 </style>
 </head>
 <body>
@@ -72,21 +75,28 @@
     <header>
       <div class="brand">🎬 Peakcut</div>
       <h1>Settings</h1>
-      <p>Manage your account and preferences</p>
+      <p><a href="/" style="color:var(--accent)">← Back to the app</a></p>
     </header>
 
     <div id="accountStatus" class="account-status">
-      <div class="status-label">Account: <span id="accountEmail">Loading…</span></div>
-      <div style="color: var(--muted); font-size: 0.9rem;">Plan: <span id="accountPlan">Free</span></div>
+      <div class="status-label">Account: <span id="accountEmail">Not signed in (this browser)</span></div>
+      <div style="color: var(--muted); font-size: 0.9rem;">Plan: <strong id="accountPlan">Free</strong> · <span id="accountUsage"></span></div>
+    </div>
+
+    <div class="section">
+      <h2>Billing</h2>
+      <div id="billingInfo"></div>
+      <button class="primary" id="billingBtn" onclick="window.location.href='/billing-portal'">Manage billing / cancel</button>
     </div>
 
     <div id="watermarkSection" style="display:none;">
       <div class="section">
         <h2>Custom Watermark <span class="pro-badge">Pro Plus</span></h2>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Saved in this browser and applied to every video you upload from it.</p>
         <div class="form-group">
           <label for="watermarkText">Watermark text</label>
-          <input type="text" id="watermarkText" maxlength="30" placeholder="Your brand or name" />
-          <small style="color: var(--muted); display: block; margin-top: 4px;">Leave blank to use default Peakcut watermark. Max 30 characters.</small>
+          <input type="text" id="watermarkText" maxlength="30" placeholder="@yourhandle" />
+          <small style="color: var(--muted); display: block; margin-top: 4px;">Leave blank for no watermark. Max 30 characters.</small>
         </div>
         <div class="form-group">
           <label for="watermarkColor">Watermark color</label>
@@ -96,27 +106,53 @@
           <div class="watermark-preview-text">Your watermark here</div>
         </div>
         <button class="primary" onclick="saveWatermark()">Save Watermark</button>
-        <button class="secondary" onclick="resetWatermark()">Use Default</button>
+        <button class="secondary" onclick="resetWatermark()">Remove</button>
       </div>
     </div>
 
     <div class="section">
       <h2>Export Presets</h2>
-      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Save your favorite settings for quick reprocessing.</p>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Save combinations you use often — pick them from the Preset menu on the upload page.</p>
       <div class="form-group">
         <label for="presetName">Preset name</label>
-        <input type="text" id="presetName" placeholder="e.g., TikTok vertical, LinkedIn square" />
+        <input type="text" id="presetName" maxlength="40" placeholder="e.g. TikTok podcast, LinkedIn square" />
       </div>
       <div class="form-group">
-        <label for="presetFormat">Clip format</label>
+        <label for="presetFormat">Format</label>
         <select id="presetFormat">
-          <option value="vertical">Vertical 9:16 (TikTok, Reels)</option>
-          <option value="square">Square 1:1 (Instagram, Pinterest)</option>
+          <option value="vertical">Vertical 9:16 (TikTok, Reels, Shorts)</option>
+          <option value="square">Square 1:1 (Instagram)</option>
           <option value="horizontal">Horizontal 16:9 (YouTube, LinkedIn)</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="presetDub">Dub language (if enabled on your plan)</label>
+        <label for="presetLayout">Framing</label>
+        <select id="presetLayout">
+          <option value="crop">Fill frame (crop centre)</option>
+          <option value="blur">Show everything + blurred fill</option>
+          <option value="fit">Letterbox</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="presetLength">Clip length</label>
+        <select id="presetLength">
+          <option value="short">Short · 12–30s</option>
+          <option value="medium" selected>Medium · 25–60s</option>
+          <option value="long">Long · 45–90s</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="presetCaptions">Captions</label>
+        <select id="presetCaptions">
+          <option value="bold">Bold white</option>
+          <option value="boxed">Boxed</option>
+          <option value="neon">Neon yellow</option>
+          <option value="outline">White outline</option>
+          <option value="subtle">Subtle</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="presetDub">Dub language (Pro)</label>
         <select id="presetDub">
           <option value="">None — keep original language</option>
           <option value="es">Spanish</option>
@@ -125,27 +161,21 @@
         </select>
       </div>
       <button class="primary" onclick="savePreset()">Save Preset</button>
-
       <div id="presetsList" style="margin-top: 20px;"></div>
     </div>
 
     <div class="section">
       <h2>API Keys</h2>
-      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;"><a href="/api/docs" style="color: var(--accent); text-decoration: none;">API Documentation →</a></p>
-      <button class="primary" onclick="generateApiKey()" style="margin-bottom: 16px;">Generate New API Key</button>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;"><a href="/api/docs" style="color: var(--accent); text-decoration: none;">API documentation →</a></p>
+      <div id="apiNotice"></div>
+      <button class="primary" id="apiGenBtn" onclick="generateApiKey()" style="margin-bottom: 16px;">Generate New API Key</button>
       <div id="apiKeysList"></div>
     </div>
 
-    <div class="section">
-      <h2>Billing</h2>
-      <div id="billingInfo"></div>
-      <button class="primary" onclick="manageBilling()">Manage Billing in Stripe</button>
-    </div>
-
     <div class="danger-zone">
-      <h3>Danger Zone</h3>
-      <p style="color: var(--muted); margin-top: 0;">These actions cannot be undone.</p>
-      <button onclick="if(confirm('Delete all your clips and metadata? This cannot be undone.')) deleteAllData();">Delete All Data</button>
+      <h3>Delete my data</h3>
+      <p style="color: var(--muted); margin-top: 0;">Deletes your clips, usage history and API keys from Peakcut right now and signs you out. It does <strong>not</strong> cancel a subscription — use "Manage billing / cancel" above for that.</p>
+      <button onclick="deleteAllData()">Delete all my data</button>
     </div>
   </div>
 
@@ -159,33 +189,33 @@
   <script>
     function escapeHtml(str) {
       const div = document.createElement('div');
-      div.textContent = str;
+      div.textContent = str == null ? '' : String(str);
       return div.innerHTML;
     }
+    function safeGet(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; } }
+    function safeSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
 
     async function loadSettings() {
       try {
-        const res = await fetch('/usage');
-        const data = await res.json();
-
-        // Update account status
-        if (data.email) {
-          document.getElementById('accountEmail').textContent = escapeHtml(data.email);
-        }
-
-        const planText = data.pro ? (data.plan === 'plus' ? 'Pro Plus' : 'Pro') : 'Free';
-        document.getElementById('accountPlan').textContent = planText;
-        if (data.pro) {
-          document.getElementById('accountStatus').className = 'account-status pro';
-        }
-
-        // Show watermark section only for Pro Plus
+        const data = await (await fetch('/usage')).json();
+        if (data.email) document.getElementById('accountEmail').textContent = data.email;
+        document.getElementById('accountPlan').textContent = data.plan_label;
+        const resets = new Date(data.resets_on + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+        document.getElementById('accountUsage').textContent = `${data.used}/${data.limit} videos this month, resets ${resets}`;
+        if (data.pro) document.getElementById('accountStatus').className = 'account-status pro';
         if (data.plan === 'plus') {
           document.getElementById('watermarkSection').style.display = 'block';
           loadWatermarkSettings();
         }
-
-        loadApiKeys();
+        const billing = document.getElementById('billingInfo');
+        if (data.pro) {
+          billing.innerHTML = '<p class="notice">Cancel, switch between Pro and Pro Plus, update your card or download invoices in Stripe\'s secure portal. Cancelling keeps your plan until the end of the period you paid for.</p>';
+        } else {
+          billing.innerHTML = '<p class="notice">You\'re on the Free plan. <a href="/pricing" style="color:var(--accent)">See plans</a>. ' +
+            (data.google_configured && !data.signed_in ? 'Paid before? <a href="/auth/google/login?next=/settings" style="color:var(--accent)">Sign in</a> with the email you paid with to restore your plan.' : 'Paid before? Sign in with the same email you paid with and your plan is restored automatically.') + '</p>';
+          document.getElementById('billingBtn').textContent = 'Open billing portal';
+        }
+        loadApiKeys(data);
         loadPresets();
       } catch (e) {
         console.error('Failed to load settings:', e);
@@ -193,143 +223,108 @@
     }
 
     function loadWatermarkSettings() {
-      const saved = localStorage.getItem('watermarkSettings');
-      if (saved) {
-        const settings = JSON.parse(saved);
+      const settings = safeGet('watermarkSettings', null);
+      if (settings) {
         document.getElementById('watermarkText').value = settings.text || '';
         document.getElementById('watermarkColor').value = settings.color || '#ffffff';
-        updateWatermarkPreview();
       }
+      updateWatermarkPreview();
     }
-
     function updateWatermarkPreview() {
       const text = document.getElementById('watermarkText').value || 'Your watermark here';
       const color = document.getElementById('watermarkColor').value;
       const preview = document.getElementById('watermarkPreview');
-      preview.innerHTML = `<div class="watermark-preview-text" style="color: ${color};">${escapeHtml(text)}</div>`;
+      preview.innerHTML = `<div class="watermark-preview-text">${escapeHtml(text)}</div>`;
+      preview.firstElementChild.style.color = color;
     }
-
     function saveWatermark() {
-      const settings = {
-        text: document.getElementById('watermarkText').value,
-        color: document.getElementById('watermarkColor').value,
-      };
-      localStorage.setItem('watermarkSettings', JSON.stringify(settings));
-      alert('Watermark saved! It will appear on your next processed clips.');
+      safeSet('watermarkSettings', { text: document.getElementById('watermarkText').value.trim(), color: document.getElementById('watermarkColor').value });
+      alert('Saved — it will be applied to videos you upload from this browser.');
     }
-
     function resetWatermark() {
-      localStorage.removeItem('watermarkSettings');
+      try { localStorage.removeItem('watermarkSettings'); } catch (e) {}
       document.getElementById('watermarkText').value = '';
       document.getElementById('watermarkColor').value = '#ffffff';
       updateWatermarkPreview();
-      alert('Watermark reset to default.');
     }
 
     function savePreset() {
       const name = document.getElementById('presetName').value.trim();
-      if (!name) {
-        alert('Enter a preset name');
-        return;
-      }
-
-      const preset = {
-        id: Date.now(),
-        name: name,
+      if (!name) { alert('Enter a preset name'); return; }
+      const presets = safeGet('exportPresets', []);
+      presets.push({
+        id: Date.now(), name,
         format: document.getElementById('presetFormat').value,
+        layout: document.getElementById('presetLayout').value,
+        length: document.getElementById('presetLength').value,
+        captions: document.getElementById('presetCaptions').value,
         dub: document.getElementById('presetDub').value,
-      };
-
-      let presets = JSON.parse(localStorage.getItem('exportPresets') || '[]');
-      presets.push(preset);
-      localStorage.setItem('exportPresets', JSON.stringify(presets));
-
+      });
+      safeSet('exportPresets', presets);
       document.getElementById('presetName').value = '';
       loadPresets();
-      alert('Preset saved!');
     }
-
     function loadPresets() {
-      const presets = JSON.parse(localStorage.getItem('exportPresets') || '[]');
+      const presets = safeGet('exportPresets', []);
       const list = document.getElementById('presetsList');
-
-      if (presets.length === 0) {
-        list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No presets saved yet.</p>';
-        return;
-      }
-
-      list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Your presets</h3>' +
-        presets.map(p => `
-          <div class="api-keys">
-            <div class="key-item">
-              <div>
-                <strong>${escapeHtml(p.name)}</strong><br/>
-                <span style="font-size: 0.75rem; opacity: 0.7;">${p.format} • ${p.dub ? `Dubbed (${p.dub})` : 'Original'}</span>
-              </div>
-              <button class="secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="deletePreset(${p.id})">Delete</button>
-            </div>
-          </div>
-        `).join('');
-    }
-
-    function deletePreset(id) {
-      let presets = JSON.parse(localStorage.getItem('exportPresets') || '[]');
-      presets = presets.filter(p => p.id !== id);
-      localStorage.setItem('exportPresets', JSON.stringify(presets));
-      loadPresets();
+      if (!presets.length) { list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No presets saved yet.</p>'; return; }
+      list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Your presets</h3>' + presets.map(p => `
+        <div class="api-keys"><div class="key-item">
+          <div><strong>${escapeHtml(p.name)}</strong><br/>
+            <span style="font-size: 0.75rem; opacity: 0.7;">${escapeHtml([p.format, p.layout || 'crop', p.length || 'medium', p.captions || 'bold', p.dub ? 'dub ' + p.dub : 'original audio'].join(' • '))}</span></div>
+          <button class="secondary" style="padding: 6px 12px; font-size: 0.85rem;" data-del="${Number(p.id)}">Delete</button>
+        </div></div>`).join('');
+      list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+        safeSet('exportPresets', safeGet('exportPresets', []).filter(p => p.id !== Number(b.dataset.del)));
+        loadPresets();
+      }));
     }
 
     async function generateApiKey() {
-      try {
-        const res = await fetch('/api/keys', { method: 'POST' });
-        if (!res.ok) throw new Error('Failed to generate API key');
-        const data = await res.json();
-        alert(`API key generated:\n\n${data.api_key}\n\nSave this key somewhere safe — you won't see it again!`);
-        loadApiKeys();
-      } catch (e) {
-        alert('Error: ' + e.message);
-      }
+      const res = await fetch('/api/keys', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not create a key.'); return; }
+      prompt('Your new API key — copy it now, it won\'t be shown again:', data.api_key);
+      loadApiKeys();
     }
-
-    async function loadApiKeys() {
-      try {
-        const res = await fetch('/api/keys');
-        if (!res.ok) return;
-        const data = await res.json();
-
-        const list = document.getElementById('apiKeysList');
-        if (data.keys.length === 0) {
-          list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No API keys yet.</p>';
-          return;
-        }
-
-        list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Active keys</h3>' +
-          data.keys.map(k => `
-            <div class="api-keys">
-              <div class="key-item">
-                <div>
-                  <div class="key-value">${escapeHtml(k.api_key)}</div>
-                  <div style="font-size: 0.75rem; color: var(--muted); margin-top: 4px;">${k.tier} • ${k.usage_this_month}/${k.tier === 'free' ? '100' : k.tier === 'pro' ? '500' : '2000'} calls</div>
-                </div>
-              </div>
-            </div>
-          `).join('');
-      } catch (e) {
-        console.error('Failed to load API keys:', e);
-      }
+    async function revokeKey(id) {
+      if (!confirm('Revoke this key? Apps using it will stop working immediately.')) return;
+      await fetch(`/api/keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      loadApiKeys();
     }
-
-    function manageBilling() {
-      window.location.href = '/billing-portal';
+    async function loadApiKeys(usage) {
+      const list = document.getElementById('apiKeysList');
+      const notice = document.getElementById('apiNotice');
+      const res = await fetch('/api/keys');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        notice.innerHTML = `<p class="notice">${escapeHtml(data.detail || 'API keys are unavailable right now.')}</p>`;
+        document.getElementById('apiGenBtn').style.display = 'none';
+        list.innerHTML = '';
+        return;
+      }
+      notice.innerHTML = `<p class="notice">${escapeHtml(data.tier === 'plus' ? 'Pro Plus' : data.tier === 'pro' ? 'Pro' : 'Free')} API tier: <strong>${data.used_this_month}/${data.monthly_limit}</strong> videos this month (shared across all your keys).</p>`;
+      if (!data.keys.length) { list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No API keys yet.</p>'; return; }
+      list.innerHTML = '<h3 style="font-size: 0.95rem; margin: 0 0 12px;">Active keys</h3>' + data.keys.map(k => `
+        <div class="api-keys"><div class="key-item">
+          <div><div class="key-value">${escapeHtml(k.prefix)}</div>
+            <div style="font-size: 0.75rem; color: var(--muted); margin-top: 4px;">Created ${escapeHtml(new Date(k.created * 1000).toLocaleDateString())}</div></div>
+          <button class="secondary" style="padding: 6px 12px; font-size: 0.85rem;" data-revoke="${escapeHtml(k.id)}">Revoke</button>
+        </div></div>`).join('');
+      list.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', () => revokeKey(b.dataset.revoke)));
     }
 
     async function deleteAllData() {
-      alert('Contact support@peakcut.example to request data deletion.');
+      if (!confirm('Delete your clips, usage history and API keys? This cannot be undone.')) return;
+      const res = await fetch('/account/delete', { method: 'POST' });
+      if (!res.ok) { alert('Something went wrong — email __CONTACT_EMAIL__ and we\'ll do it manually.'); return; }
+      try { ['exportPresets', 'watermarkSettings', 'lastOptions', 'notifyEmail'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+      alert('Done — your data has been deleted.');
+      window.location.href = '/';
     }
 
     document.getElementById('watermarkText').addEventListener('input', updateWatermarkPreview);
     document.getElementById('watermarkColor').addEventListener('input', updateWatermarkPreview);
-
     loadSettings();
   </script>
 </body>

@@ -8,3 +8,6 @@ pyjwt[crypto]>=2.7
 itsdangerous>=2.1
 deep-translator>=1.11
 piper-tts>=1.2
+# faster-whisper calls av.open(metadata_errors=...), which newer PyAV removed —
+# an unpinned rebuild breaks every transcription.
+av>=11,<16

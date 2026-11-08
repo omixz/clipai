@@ -4,3 +4,4 @@ api_keys.json
 __pycache__/
 *.pyc
 .env
+*.tmp

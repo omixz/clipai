@@ -68,10 +68,11 @@
 <body>
   <div class="wrap">
     <header>
+      <div id="notice"></div>
       <div class="brand">🎬 Peakcut</div>
       <p class="eyebrow">AI Video Clipper</p>
       <h1>Simple, transparent pricing</h1>
-      <p>Choose the plan that fits your needs. No hidden fees.</p>
+      <p>No credits, no expiring minutes, no surprise renewals. A simple number of videos each month — and you can cancel in one click.</p>
     </header>
 
     <div class="nav-bar">
@@ -91,9 +92,11 @@
         <ul class="plan-features">
           <li>5 videos per month</li>
           <li>3 clips per video</li>
-          <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
-          <li class="disabled">Filler word removal</li>
-          <li class="disabled">Watermark-free</li>
+          <li>Full-sentence cuts + word-timed captions</li>
+          <li>Vertical, square &amp; horizontal · smart framing</li>
+          <li>Filler words removed from captions</li>
+          <li>Editable .srt captions, titles &amp; hashtags</li>
+          <li class="disabled">Small "Made with Peakcut" watermark</li>
           <li class="disabled">Multi-language dubbing</li>
         </ul>
         <a href="/" class="plan-cta secondary">Get Started Free</a>
@@ -107,11 +110,11 @@
         <p class="plan-subtext">Cancel anytime</p>
         <ul class="plan-features">
           <li>20 videos per month</li>
-          <li>3 clips per video</li>
-          <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
-          <li>Filler word removal</li>
-          <li>Watermark-free</li>
+          <li>Up to 5 clips per video</li>
+          <li>No watermark</li>
+          <li>Priority queue — skip the free line</li>
           <li>Multi-language dubbing (ES, FR, PT)</li>
+          <li>Everything in Free</li>
         </ul>
         <button class="plan-cta primary" onclick="window.location.href='/create-checkout-session'">Upgrade to Pro</button>
       </div>
@@ -124,17 +127,18 @@
         <p class="plan-subtext">Cancel anytime</p>
         <ul class="plan-features">
           <li>50 videos per month</li>
-          <li>3 clips per video</li>
-          <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
-          <li>Filler word removal</li>
-          <li>Watermark-free</li>
+          <li>Up to 8 clips per video</li>
+          <li>Your own watermark / @handle</li>
+          <li>Priority queue — skip the free line</li>
           <li>Multi-language dubbing (ES, FR, PT)</li>
+          <li>Everything in Pro</li>
         </ul>
         <button class="plan-cta primary" onclick="window.location.href='/create-checkout-session-plus'">Upgrade to Pro Plus</button>
       </div>
     </div>
 
-    <h2 style="text-align: center; margin-top: 60px; margin-bottom: 30px;">Or use Peakcut programmatically</h2>
+    <h2 style="text-align: center; margin-top: 60px; margin-bottom: 8px;">Or use Peakcut programmatically</h2>
+    <p style="text-align:center;color:var(--muted);margin-top:0">API access is included with every plan — your API tier matches your subscription.</p>
 
     <div class="pricing-grid">
       <!-- API Free -->
@@ -142,10 +146,10 @@
         <div class="plan-name">API Free</div>
         <p class="plan-desc">For developers</p>
         <div class="plan-price">$0<span class="period">/month</span></div>
-        <p class="plan-subtext">100 calls per month</p>
+        <p class="plan-subtext">10 videos per month</p>
         <ul class="plan-features">
           <li>REST API access</li>
-          <li>100 API calls/month</li>
+          <li>10 videos/month (watermarked)</li>
           <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
           <li class="disabled">Priority support</li>
           <li class="disabled">SLA guarantee</li>
@@ -158,10 +162,10 @@
         <div class="plan-name">API Pro</div>
         <p class="plan-desc">For integrations</p>
         <div class="plan-price">$15<span class="period">/month</span></div>
-        <p class="plan-subtext">500 calls per month</p>
+        <p class="plan-subtext">500 videos per month · included with Pro</p>
         <ul class="plan-features">
           <li>REST API access</li>
-          <li>500 API calls/month</li>
+          <li>500 videos/month, no watermark</li>
           <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
           <li>Priority processing queue</li>
           <li class="disabled">SLA guarantee</li>
@@ -174,13 +178,13 @@
         <div class="plan-name">API Pro Plus</div>
         <p class="plan-desc">For platforms</p>
         <div class="plan-price">$29<span class="period">/month</span></div>
-        <p class="plan-subtext">2000 calls per month</p>
+        <p class="plan-subtext">2000 videos per month · included with Pro Plus</p>
         <ul class="plan-features">
           <li>REST API access</li>
-          <li>2000 API calls/month</li>
+          <li>2000 videos/month, no watermark</li>
           <li>Vertical (9:16), Square (1:1), Horizontal (16:9)</li>
           <li>Priority processing queue</li>
-          <li>99.5% uptime SLA</li>
+          <li class="disabled">SLA (contact us)</li>
         </ul>
         <button class="plan-cta primary" onclick="window.location.href='/create-checkout-session-plus'">Upgrade to API Pro Plus</button>
       </div>
@@ -190,11 +194,11 @@
       <h2>Frequently asked questions</h2>
       <details>
         <summary>Can I change plans or cancel anytime?</summary>
-        <p>Yes. Paid plans renew monthly but you can cancel anytime from your billing portal. We won't charge you for the next month — your plan stays active through the end of the current billing cycle.</p>
+        <p>Yes. Go to Settings → Manage billing / cancel — it opens Stripe's portal and takes about 10 seconds, no emails or chat bots. Your plan stays active through the end of the period you've paid for and you won't be charged again. Switching between Pro and Pro Plus happens in the same place.</p>
       </details>
       <details>
         <summary>What if I don't use all my monthly videos?</summary>
-        <p>That's fine. Your monthly allocation resets on the same date each month. Unused videos don't roll over, but you'll have a fresh batch next month.</p>
+        <p>Your allowance resets on the 1st of every month (UTC). Unused videos don't roll over — but there are no credits to lose either, and if a video fails to process it never counts.</p>
       </details>
       <details>
         <summary>What payment methods do you accept?</summary>
@@ -202,15 +206,19 @@
       </details>
       <details>
         <summary>Do you offer refunds?</summary>
-        <p>Since Peakcut processes videos immediately, refunds aren't available. However, you can cancel your plan anytime and won't be charged again.</p>
+        <p>Failed videos are refunded to your allowance automatically. If you were charged by mistake — forgot to cancel, double charge, anything — email <a href="mailto:__CONTACT_EMAIL__" style="color:var(--accent)">__CONTACT_EMAIL__</a> within 7 days of the charge and a human will make it right.</p>
+      </details>
+      <details>
+        <summary>Do I lose anything when I cancel?</summary>
+        <p>No credits to forfeit and nothing held hostage. Download your clips (kept 24 hours on every plan) and you drop back to Free at the end of your billing period.</p>
       </details>
       <details>
         <summary>What if I need more than 50 videos/month?</summary>
-        <p>Reach out to <a href="mailto:support@peakcut.example" style="color:var(--accent)">support@peakcut.example</a> — we can discuss custom plans for high-volume users and teams.</p>
+        <p>Reach out to <a href="mailto:__CONTACT_EMAIL__" style="color:var(--accent)">__CONTACT_EMAIL__</a> — we can discuss custom plans for high-volume users and teams.</p>
       </details>
       <details>
         <summary>What's the difference between Pro and Pro Plus?</summary>
-        <p>Pro gives you 20 videos/month — perfect for most creators uploading a weekly podcast or series. Pro Plus gives you 50/month — ideal for teams managing multiple channels or daily uploads. Both include all the same features (dubbing, multi-format, watermark-free).</p>
+        <p>Pro gives you 20 videos/month with up to 5 clips each — perfect for a weekly podcast or series. Pro Plus gives you 50/month with up to 8 clips each plus your own watermark — ideal for daily uploads or several channels.</p>
       </details>
     </section>
   </div>
@@ -220,5 +228,10 @@
     <a href="/privacy">Privacy</a> ·
     <a href="/terms">Terms</a>
   </footer>
+<script>
+  if (new URLSearchParams(location.search).get('no_subscription') === '1') {
+    document.getElementById('notice').innerHTML = '<p style="background:#fff4e6;border-radius:10px;padding:10px 14px;max-width:560px;margin:0 auto 12px">We couldn\'t find a subscription for you. If you paid before, sign in with the same email you used at checkout.</p>';
+  }
+</script>
 </body>
 </html>

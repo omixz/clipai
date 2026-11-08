@@ -5,6 +5,7 @@ entirely and nothing changes. This also doubles as the start of an email
 list — a real monetization lever (re-marketing free users into Pro) that
 costs nothing to build alongside the notification itself.
 """
+import html as html_lib
 import logging
 
 import httpx
@@ -33,11 +34,11 @@ def _send(to_email: str, subject: str, html: str):
 
 
 def send_done_email(to_email: str, clip_urls: list[str], duration: float, is_pro: bool):
-    links = "".join(f'<li><a href="{config.SITE_URL}{u}">Clip {i+1}</a></li>' for i, u in enumerate(clip_urls))
+    links = "".join(f'<li><a href="{html_lib.escape(config.SITE_URL + u)}">Clip {i+1}</a></li>' for i, u in enumerate(clip_urls))
     upsell = "" if is_pro else (
         '<p style="margin-top:24px;padding:16px;background:#f6f5fb;border-radius:10px;">'
-        'Want no watermark and unlimited videos? '
-        f'<a href="{config.SITE_URL}/create-checkout-session">Upgrade to Pro — $15/mo</a></p>'
+        'Want no watermark, 20 videos/month and more clips per video? '
+        f'<a href="{config.SITE_URL}/pricing">Upgrade to Pro — $15/mo, cancel in one click</a></p>'
     )
     html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
@@ -55,7 +56,7 @@ def send_failed_email(to_email: str, error: str):
     html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
       <h2>Processing failed</h2>
-      <p>{error}</p>
+      <p>{html_lib.escape(error)}</p>
       <p><a href="{config.SITE_URL}">Try again</a></p>
     </div>
     """
