@@ -1,0 +1,8 @@
+{
+  "name": "peakcut-autopilot-renderer",
+  "private": true,
+  "description": "Renders the minimal marketing reels (see render.mjs).",
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}

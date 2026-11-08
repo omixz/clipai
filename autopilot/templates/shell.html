@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<style>
+@font-face { font-family: 'Outfit'; font-weight: 400; src: url(data:font/ttf;base64,__FONT__) format('truetype'); }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root { --bg: #000; --fg: #f4f4f4; --soft: #9a9a9a; }
+.light { --bg: #fff; --fg: #111; --soft: #6b6b6b; }
+html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--bg); }
+#root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: var(--bg); }
+/* one quiet lowercase line, inside TikTok/Reels' top safe area */
+.cap { position: absolute; left: 110px; width: 860px; top: 440px; text-align: center;
+       font: 400 54px/1.25 'Outfit'; color: var(--fg); letter-spacing: -.005em; opacity: 0; }
+#word { position: absolute; left: 0; width: 1080px; top: 900px; text-align: center; padding-right: 26px;
+        font: 400 104px/1 'Outfit'; color: var(--fg); letter-spacing: -.02em; opacity: 0; }
+#sub { position: absolute; left: 0; width: 1080px; top: 1050px; text-align: center;
+       font: 400 38px/1 'Outfit'; color: var(--soft); opacity: 0; }
+svg { position: absolute; left: 0; top: 0; }
+.hair { stroke: var(--fg); stroke-width: 2.6; fill: none; stroke-linecap: round; }
+.hair.thin { stroke-width: 1.6; }
+.solid { fill: var(--fg); }
+#dot { fill: var(--fg); }
+</style></head>
+<body>
+<div id="root">
+  <div id="caps"><div class="cap" id="c1"></div><div class="cap" id="c2"></div></div>
+  <svg id="art" width="1080" height="1920" viewBox="0 0 1080 1920">
+    <g id="art-scene"></g>
+    <circle id="dot" cx="-50" cy="-50" r="0"/>
+  </svg>
+  <div id="word"><span id="wordText">peakcut</span></div>
+  <div id="sub"></div>
+</div>
+<script>__LIB__</script>
+<script>__SCENE__</script>
+<script>
+(function () {
+  const spec = __SPEC__;
+  const K = window.Peakcut;
+  if (spec.light) document.documentElement.classList.add('light');
+  const sc = window.SCENE_FACTORY(spec, K);
+  const cap = K.caption(spec.lines, sc.swapAt);
+  const end = K.endcard(sc.body, spec.cta);
+  const dot = document.getElementById('dot');
+  let last = [540, 1040, 22];
+  window.SCENE = {
+    duration: sc.body + end.duration,
+    cues: [...sc.cues, sc.body + .7],
+    render(t) {
+      cap(t);
+      let d = sc.render(t);
+      if (t < sc.body) last = d;
+      const o = end.render(t, last);
+      let sx = d[3] || 1, sy = d[4] || 1;
+      if (o) { d = o; sx = sy = 1; }
+      K.set(dot, { cx: d[0], cy: d[1], r: Math.max(0, d[2]),
+                   transform: `translate(${d[0]} ${d[1] + d[2]}) scale(${sx} ${sy}) translate(${-d[0]} ${-d[1] - d[2]})` });
+    },
+  };
+})();
+</script>
+</body></html>

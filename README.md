@@ -39,6 +39,26 @@ first real request isn't stuck downloading a ~250MB model.
 
 Uploads are deleted as soon as clips are rendered; clips are deleted after 24 hours. Job ids are 64-bit random, job status/ZIP endpoints are owner-only, and only finished `.mp4`/`.srt` files are ever served.
 
+## Process on your own hardware
+
+Users can make clips on their own computer instead of the shared server:
+
+1. **Settings → Your computers → Pair a computer** issues a device token (stored hashed, max 3 per user). The page shows the exact command to run.
+2. On that computer: download `/worker/bundle.zip` (or clone this repo), `pip install -r requirements-worker.txt`, then
+   `python peakcut_worker.py --server https://your-site --token pd_…`. It polls `/worker/claim` and processes that user's **My computer** uploads locally.
+   - Whisper runs on CUDA automatically, using the `small` model on GPU and `base` on CPU.
+   - Rendering uses NVENC, Quick Sync, VideoToolbox or AMF when ffmpeg supports them.
+   - Finished clips are uploaded to `/worker/jobs/{id}/result` and re-validated server-side.
+3. Jobs processed on your own computer **don't use the monthly allowance**. They're capped at `OWN_DEVICE_DAILY_LIMIT` per day (default 30) to bound storage, and can request up to 8 clips.
+4. **Leases.** A worker holds a 3-minute lease that its heartbeat extends. If it disappears, the job goes back in the queue, and after 3 lost leases it fails with a refund.
+5. **Offline.** `python peakcut_worker.py --local video.mp4 --out clips/` works fully offline, with no account.
+
+**Owner capacity.** Set `WORKER_TOKEN` and run the same worker with that token on your own GPU box to drain the *cloud* queue. With `LOCAL_WORKER_ENABLED=0`, the 512MB host becomes a pure web front and all processing happens on your hardware.
+
+## Marketing autopilot (TikTok + Instagram)
+
+`autopilot/` renders a minimal black-and-white reel and posts it to TikTok and Instagram twice a day through Buffer, entirely from GitHub Actions (`.github/workflows/marketing.yml`). See [`autopilot/README.md`](autopilot/README.md) for the 10-minute setup.
+
 ## Plans, limits and ads
 
 | | Free | Pro ($15) | Pro Plus ($29) |

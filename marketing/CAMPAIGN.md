@@ -1,5 +1,7 @@
 # Peakcut launch campaign: "Clips that don't cut you off"
 
+> **Automated TikTok + Instagram posting is built.** `autopilot/` makes a minimal black-and-white reel and posts it twice a day via Buffer, entirely from GitHub Actions. Setup: [`autopilot/README.md`](../autopilot/README.md). The manual channels below (Product Hunt, Reddit, DMs) are still worth doing once at launch; the autopilot keeps the TikTok/Instagram presence going afterwards.
+
 A four-week, mostly $0 campaign. It's built on what people complain about most in reviews of the established AI clippers, and every claim below matches something the product does today.
 
 ---

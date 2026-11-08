@@ -75,6 +75,14 @@
   .opt select:disabled { opacity: 0.55; cursor: not-allowed; }
   .opt .hint { color: var(--muted); font-size: 0.72rem; margin: 3px 0 0; }
   .pro-tag { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 0.62rem; font-weight: 700; vertical-align: middle; }
+  .device-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 0.85rem; }
+  .device-label { font-weight: 700; font-size: 0.78rem; margin-right: 2px; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; background: #fff; }
+  .seg input:checked + span { border-color: var(--accent); background: #f1ecff; color: var(--accent); font-weight: 700; }
+  .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .device-hint { color: var(--muted); font-size: 0.78rem; flex-basis: 100%; }
+  .device-hint a { color: var(--accent); }
   .preset-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 0.85rem; flex-wrap: wrap; }
   .preset-row select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); }
 
@@ -168,7 +176,7 @@
       <p class="eyebrow">Free AI Video Clipper<span class="pro-badge" id="proBadge" style="display:none">Pro</span></p>
       <h1>Turn long videos into short clips people actually finish watching</h1>
       <p class="tagline">Drop in a podcast, stream or talk. Peakcut finds the strongest moments, cuts them on full sentences, reframes them vertical and burns in word-timed captions. No editing skills, no credits that expire.</p>
-      <div class="trust"><span>5 free videos / month</span><span>No card needed</span><span>Never cuts mid-sentence</span><span>Cancel in one click</span></div>
+      <div class="trust"><span>5 free videos / month</span><span>No card needed</span><span>Never cuts mid-sentence</span><span>Use your own GPU</span><span>Cancel in one click</span></div>
     </header>
 
     <nav class="nav-bar">
@@ -196,6 +204,12 @@
           <label for="presetSelect"><strong>Preset:</strong></label>
           <select id="presetSelect"><option value="">— choose a saved preset —</option></select>
           <a href="/settings" style="color:var(--accent);font-size:0.8rem">Manage presets</a>
+        </div>
+        <div class="device-row" id="deviceRow">
+          <span class="device-label">Process on</span>
+          <label class="seg"><input type="radio" name="device" value="cloud" checked><span>☁️ Peakcut cloud</span></label>
+          <label class="seg"><input type="radio" name="device" value="own"><span>💻 My computer</span></label>
+          <span class="device-hint" id="deviceHint"></span>
         </div>
         <div class="options">
           <div class="opt">
@@ -315,6 +329,7 @@
       <details><summary>What happens to my video?</summary><p>It's only used to make your clips. The upload is deleted as soon as clips are rendered; clips are deleted after 24 hours, so download them. You can wipe everything from Settings at any time.</p></details>
       <details><summary>Do unused videos roll over? Do credits expire?</summary><p>There are no credits to expire. Your allowance resets on the 1st of each month (UTC). If a video fails to process, it doesn't count.</p></details>
       <details><summary>How do I cancel?</summary><p>Settings → Manage billing. Stripe's portal lets you cancel, switch plans, update your card or download invoices instantly. Your plan stays active until the end of the period you paid for.</p></details>
+      <details><summary>Can I use my own computer or GPU?</summary><p>Yes. Pair a computer in Settings → Your computers and run the small Peakcut worker on it. Then choose "My computer" when uploading: your PC does the transcription and rendering (on an NVIDIA GPU or Apple Silicon automatically), and those videos don't use your monthly allowance. You can upload from your phone while your PC at home does the work. The worker also runs fully offline with no upload at all.</p></details>
       <details><summary>Can I edit the captions?</summary><p>Yes — each clip comes with an .srt file. Import it with the clip into CapCut, Premiere, DaVinci Resolve or YouTube Studio.</p></details>
       <details><summary>Can I dub my clips into another language?</summary><p>Pro plans can dub English videos into Spanish, French or Portuguese — speech is translated and re-voiced, and captions are translated too.</p></details>
     </section>
@@ -336,6 +351,29 @@
 
     let usage = null;
     let fileQueue = [];
+    const selectedDevice = () => (document.querySelector('input[name=device]:checked') || {}).value || 'cloud';
+
+    function updateDeviceHint() {
+      const hint = $('deviceHint');
+      const own = selectedDevice() === 'own';
+      fillClipCount(own ? 8 : ((usage && usage.max_clips) || 3));
+      if (!own) {
+        hint.innerHTML = '';
+        return;
+      }
+      const devices = (usage && usage.devices) || [];
+      const online = devices.filter(d => d.online);
+      if (!devices.length) {
+        hint.innerHTML = 'Use your own PC or GPU — those videos don\'t use your monthly allowance. <a href="/settings#computers">Pair a computer first →</a>';
+      } else if (!online.length) {
+        hint.innerHTML = `${escapeHtml(devices.map(d => d.name).join(', '))} ${devices.length > 1 ? 'are' : 'is'} offline — start <code>peakcut_worker.py</code> on it and your video will start automatically. <a href="/settings#computers">Setup</a>`;
+      } else {
+        hint.textContent = `✓ ${online.map(d => d.name).join(', ')} online · doesn't use your monthly allowance · up to ${usage.own_daily_limit}/day`;
+      }
+      try { localStorage.setItem('device', selectedDevice()); } catch (e) {}
+    }
+    document.querySelectorAll('input[name=device]').forEach(r => r.addEventListener('change', updateDeviceHint));
+    try { const d = localStorage.getItem('device'); if (d) { const r = document.querySelector(`input[name=device][value="${d === 'own' ? 'own' : 'cloud'}"]`); if (r) r.checked = true; } } catch (e) {}
 
     function escapeHtml(str) {
       const div = document.createElement('div');
@@ -410,7 +448,7 @@
         }
 
         notifyRow.style.display = data.email_configured ? '' : 'none';
-        fillClipCount(data.max_clips || 3);
+        updateDeviceHint();
 
         const badge = $('quotaBadgeContainer');
         const resets = new Date(data.resets_on + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -490,6 +528,7 @@
       fd.append('layout', layoutSel.value);
       fd.append('clip_length', clipLength.value);
       fd.append('n_clips', nClips.value || '3');
+      fd.append('device', selectedDevice());
       if (dubLang.value) fd.append('dub_lang', dubLang.value);
       const email = notifyEmail.value.trim();
       if (email) { fd.append('notify_email', email); try { localStorage.setItem('notifyEmail', email); } catch (e) {} }
@@ -587,13 +626,19 @@
 
         if (data.status === 'queued') {
           card.stage('queued');
-          card.status(data.queue_position > 1 ? `In queue — position ${data.queue_position}. You can leave this tab open.` : 'Starting…');
+          if (data.device === 'own') {
+            card.status(data.device_online
+              ? (data.queue_position > 1 ? `Waiting for your computer — ${data.queue_position - 1} video(s) ahead of this one.` : 'Sending to your computer…')
+              : "Waiting for your computer — start peakcut_worker.py on it (Settings → Your computers) and this will begin automatically.");
+          } else {
+            card.status(data.queue_position > 1 ? `In queue — position ${data.queue_position}. You can leave this tab open.` : 'Starting…');
+          }
           setTimeout(tick, 3000);
         } else if (data.status === 'processing') {
           const label = { transcribing: 'Transcribing speech', finding_moments: 'Finding the best moments', rendering: 'Rendering clips' }[data.stage] || 'Processing';
           card.stage(data.stage || 'transcribing');
           card.progress(22 + (data.progress || 0) * 0.78);
-          card.status(`${label}… (${data.elapsed}s)`);
+          card.status(`${label}${data.worker_name && data.device === 'own' ? ` on ${data.worker_name}` : ''}… (${data.elapsed}s)`);
           setTimeout(tick, 2500);
         } else if (data.status === 'done') {
           card.stage('done'); card.progress(100); card.finish();

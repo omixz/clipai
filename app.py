@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import itertools
 import json
 import logging
@@ -128,6 +129,36 @@ def refund_use(identity: str):
         rec["used"] = max(0, rec["used"] - 1)
         data[identity] = rec
         _json_save(USAGE_FILE, data)
+
+
+def _day_key() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def reserve_own_daily(identity: str) -> bool:
+    key = f"own:{identity}"
+    with _usage_lock:
+        data = _json_load(USAGE_FILE)
+        rec = data.get(key) or {}
+        if rec.get("day") != _day_key():
+            rec = {"day": _day_key(), "used": 0}
+        if rec["used"] >= config.OWN_DEVICE_DAILY_LIMIT:
+            return False
+        rec["used"] += 1
+        data[key] = rec
+        _json_save(USAGE_FILE, data)
+        return True
+
+
+def refund_own_daily(identity: str):
+    key = f"own:{identity}"
+    with _usage_lock:
+        data = _json_load(USAGE_FILE)
+        rec = data.get(key) or {}
+        if rec.get("day") == _day_key():
+            rec["used"] = max(0, rec.get("used", 0) - 1)
+            data[key] = rec
+            _json_save(USAGE_FILE, data)
 
 
 # Back-compat names used by older code/tests.
@@ -360,16 +391,24 @@ def _bearer_key(request: Request) -> str | None:
 
 
 # ── Background job queue ─────────────────────────────────────────────────────
-# One worker, one job at a time (two concurrent Whisper+ffmpeg runs OOM a
-# 512MB instance). Paid jobs jump ahead of free ones — pricing.html promises
-# a priority queue, which previously didn't exist.
+# Jobs are processed either by the built-in worker thread (one at a time —
+# two concurrent Whisper+ffmpeg runs OOM a 512MB instance) or by external
+# workers running peakcut_worker.py on someone's own hardware:
+#   * a user's paired computer processes that user's "own hardware" jobs;
+#   * the site owner's WORKER_TOKEN machines help drain the cloud queue.
+# Every claim goes through _try_claim() under one lock, so a job can never be
+# processed twice. External claims hold a lease that progress updates extend;
+# if a worker vanishes, the lease expires and the job goes back in the queue.
+# Paid jobs jump ahead of free ones (priority 0 vs 1).
 
 MAX_QUEUE = 10
+MAX_OWN_QUEUED_PER_USER = 5
+LEASE_SECONDS = 180
 JOB_MAX_AGE_SECONDS = config.JOB_RETENTION_HOURS * 60 * 60
 
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
-_job_queue: "queue.PriorityQueue[tuple[int, int, str]]" = queue.PriorityQueue(maxsize=MAX_QUEUE)
+_job_queue: "queue.PriorityQueue[tuple[int, int, str]]" = queue.PriorityQueue()
 _seq = itertools.count()
 
 
@@ -384,10 +423,57 @@ def _get_job(job_id):
         return dict(job) if job else None
 
 
+def _queued_cloud_count() -> int:
+    with _jobs_lock:
+        return sum(1 for j in _jobs.values() if j.get("status") == "queued" and j.get("device", "cloud") == "cloud")
+
+
+def _cloud_queue_full() -> bool:
+    return _queued_cloud_count() >= MAX_QUEUE
+
+
 def _enqueue(job_id: str, priority: int):
+    """Marks a job ready. Cloud jobs also go on the built-in worker's queue;
+    own-hardware jobs wait for the user's paired computer to claim them."""
+    job = _get_job(job_id) or {}
+    if job.get("device", "cloud") == "cloud" and _cloud_queue_full():
+        raise queue.Full
     seq = next(_seq)
-    _set_job(job_id, priority=priority, seq=seq)
-    _job_queue.put_nowait((priority, seq, job_id))
+    _set_job(job_id, priority=priority, seq=seq, status="queued", claimed_by=None, lease_until=None)
+    if job.get("device", "cloud") == "cloud" and config.LOCAL_WORKER_ENABLED:
+        _job_queue.put_nowait((priority, seq, job_id))
+
+
+def _try_claim(job_id: str, claimer: str) -> bool:
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job or job.get("status") != "queued":
+            return False
+        job.update(status="processing", claimed_by=claimer, started_at=time.time(),
+                   stage="transcribing", progress=2,
+                   lease_until=None if claimer == "internal" else time.time() + LEASE_SECONDS)
+        return True
+
+
+def _expire_leases():
+    """Requeue jobs whose external worker stopped reporting (crashed, went
+    offline, lost network). Their stage/progress reset so the UI is honest."""
+    now = time.time()
+    with _jobs_lock:
+        expired = [jid for jid, j in _jobs.items()
+                   if j.get("status") == "processing" and j.get("lease_until") and j["lease_until"] < now]
+    for jid in expired:
+        job = _get_job(jid)
+        log.warning("lease expired for job %s (worker %s) — requeueing", jid, job.get("claimed_by"))
+        attempts = job.get("attempts", 0) + 1
+        if attempts >= 3:
+            _fail_job(jid, "The computer processing this video stopped responding three times.")
+            continue
+        _set_job(jid, attempts=attempts)
+        try:
+            _enqueue(jid, job.get("priority", 1))
+        except queue.Full:
+            _set_job(jid, status="queued", claimed_by=None, lease_until=None)
 
 
 def _queue_position(job_id):
@@ -396,14 +482,22 @@ def _queue_position(job_id):
         if not me or me.get("status") != "queued":
             return None
         key = (me.get("priority", 1), me.get("seq", 0))
+        device = me.get("device", "cloud")
         ahead = sum(1 for j in _jobs.values()
-                    if j.get("status") == "queued" and (j.get("priority", 1), j.get("seq", 0)) < key)
+                    if j.get("status") == "queued" and j.get("device", "cloud") == device
+                    and (device == "cloud" or j.get("identity") == me.get("identity"))
+                    and (j.get("priority", 1), j.get("seq", 0)) < key)
     return ahead + 1
 
 
 def _refund_job(job):
     identity = job.get("identity")
     if not identity:
+        return
+    if job.get("device") == "own":
+        refund_own_daily(identity)
+        return
+    if not job.get("counted", True):
         return
     if job.get("api_key"):
         refund_api_use(identity)
@@ -422,13 +516,42 @@ def _friendly_error(e: Exception) -> str:
     return "Processing failed — the video may be too short, silent, or an unsupported codec. Try a longer video with clearer speech."
 
 
+def _finish_job(job_id: str, clips: list, duration, language):
+    """Shared by the built-in worker and external workers."""
+    job = _get_job(job_id) or {}
+    for clip in clips:
+        clip["url"] = f"/jobs/{job_id}/{clip['file']}"
+        clip["srt_url"] = f"/jobs/{job_id}/{clip['srt']}" if clip.get("srt") else None
+        clip.pop("error", None)
+        clip.pop("ok", None)
+    _set_job(job_id, status="done", clips=clips, duration=duration, language=language,
+             finished_at=time.time(), stage="done", progress=100, lease_until=None)
+    try:
+        if job.get("input_path"):
+            Path(job["input_path"]).unlink(missing_ok=True)
+    except Exception:
+        pass
+    if job.get("notify_email"):
+        email_lib.send_done_email(job["notify_email"], [c["url"] for c in clips], duration or 0, job.get("is_pro", False))
+
+
+def _fail_job(job_id: str, error_msg: str, user_error: bool = False):
+    job = _get_job(job_id) or {}
+    shutil.rmtree(JOBS_DIR / job_id, ignore_errors=True)
+    _refund_job(job)
+    if job.get("counted", True):
+        error_msg += " This video didn't count toward your monthly limit."
+    _set_job(job_id, status="failed", error=error_msg, finished_at=time.time(), lease_until=None)
+    if job.get("notify_email"):
+        email_lib.send_failed_email(job["notify_email"], error_msg)
+
+
 def _worker():
     while True:
         _, _, job_id = _job_queue.get()
+        if not _try_claim(job_id, "internal"):
+            continue  # already taken by an external worker, or cancelled
         job = _get_job(job_id)
-        if not job or job.get("status") != "queued":
-            continue
-        _set_job(job_id, status="processing", started_at=time.time(), stage="transcribing", progress=2)
         job_dir = JOBS_DIR / job_id
         try:
             if "input_path" not in job:
@@ -447,37 +570,21 @@ def _worker():
             clips = [c for c in result["clips"] if c.get("ok")]
             if not clips:
                 raise RuntimeError("no usable clips found")
-            for clip in clips:
-                clip["url"] = f"/jobs/{job_id}/{clip['file']}"
-                clip["srt_url"] = f"/jobs/{job_id}/{clip['srt']}" if clip.get("srt") else None
-                clip.pop("error", None)
-            _set_job(job_id, status="done", clips=clips, duration=result["duration"],
-                     language=result.get("language"), finished_at=time.time(), stage="done", progress=100)
-            try:
-                Path(job["input_path"]).unlink(missing_ok=True)
-            except Exception:
-                pass
-            if job.get("notify_email"):
-                email_lib.send_done_email(
-                    job["notify_email"], [c["url"] for c in clips], result["duration"], job.get("is_pro", False)
-                )
+            _finish_job(job_id, clips, result["duration"], result.get("language"))
         except Exception as e:
             if isinstance(e, ValueError):
                 # User-input problem (e.g. dubbing a non-English video) — show the real reason.
                 log.info("job %s rejected: %s", job_id, e)
-                error_msg = str(e)
+                _fail_job(job_id, str(e), user_error=True)
             else:
                 log.exception("processing failed for job %s", job_id)
-                error_msg = _friendly_error(e)
-            shutil.rmtree(job_dir, ignore_errors=True)
-            _refund_job(job)
-            error_msg += " This video didn't count toward your monthly limit."
-            _set_job(job_id, status="failed", error=error_msg, finished_at=time.time())
-            if job.get("notify_email"):
-                email_lib.send_failed_email(job["notify_email"], error_msg)
+                _fail_job(job_id, _friendly_error(e))
 
 
-threading.Thread(target=_worker, daemon=True).start()
+if config.LOCAL_WORKER_ENABLED:
+    threading.Thread(target=_worker, daemon=True).start()
+else:
+    log.info("LOCAL_WORKER_ENABLED=0 — cloud jobs wait for external workers (peakcut_worker.py with WORKER_TOKEN).")
 
 
 def cleanup_old_jobs():
@@ -498,8 +605,14 @@ def cleanup_old_jobs():
     with _jobs_lock:
         stale = [jid for jid, j in _jobs.items()
                  if j.get("status") in ("failed", "done") and now - j.get("finished_at", now) > JOB_MAX_AGE_SECONDS]
+        # Own-hardware jobs whose computer never showed up: give up after a day.
+        stale += [jid for jid, j in _jobs.items()
+                  if j.get("status") == "queued" and j.get("device") == "own"
+                  and now - j.get("created_at", now) > JOB_MAX_AGE_SECONDS]
         for jid in stale:
             _jobs.pop(jid, None)
+    for jid in stale:
+        shutil.rmtree(JOBS_DIR / jid, ignore_errors=True)
 
     with _ip_log_lock:
         empty_ips = [ip for ip, times in _ip_request_log.items() if not any(now - t < 3600 for t in times)]
@@ -508,12 +621,72 @@ def cleanup_old_jobs():
 
 
 def _janitor():
+    ticks = 0
     while True:
-        time.sleep(600)
-        cleanup_old_jobs()
+        time.sleep(30)
+        ticks += 1
+        try:
+            _expire_leases()
+            if ticks % 20 == 0:
+                cleanup_old_jobs()
+        except Exception:
+            log.exception("janitor tick failed")
 
 
 threading.Thread(target=_janitor, daemon=True).start()
+
+
+# ── Own hardware: paired computers ───────────────────────────────────────────
+# A user pairs a computer in Settings and gets a device token (pd_...).
+# peakcut_worker.py on that computer polls /worker/claim with it and
+# processes that user's "my computer" jobs locally (GPU if present), then
+# uploads the finished clips. Those jobs don't use the monthly allowance —
+# the user's hardware did the work — but are capped per day so storage
+# stays bounded. Tokens are stored hashed, like API keys.
+
+DEVICE_ONLINE_SECONDS = 90
+
+
+def _devices_for(identity: str) -> list:
+    with _api_lock:
+        data = _load_api_data()
+    now = time.time()
+    return [
+        {"id": h[:12], "name": d.get("name", "My computer"), "created": d.get("created"),
+         "last_seen": d.get("last_seen"), "online": bool(d.get("last_seen") and now - d["last_seen"] < DEVICE_ONLINE_SECONDS),
+         "info": d.get("info", {})}
+        for h, d in data.get("devices", {}).items() if d.get("identity") == identity and d.get("active", True)
+    ]
+
+
+def _worker_principal(request: Request) -> dict:
+    """Who is calling /worker/*: a user's paired computer, or the site
+    owner's WORKER_TOKEN machine. Raises 401 otherwise."""
+    token = _bearer_key(request) or ""
+    if config.WORKER_TOKEN and hmac.compare_digest(token, config.WORKER_TOKEN):
+        return {"kind": "owner", "id": "owner", "identity": None}
+    if token.startswith("pd_"):
+        h = _hash_key(token)
+        with _api_lock:
+            data = _load_api_data()
+            dev = data.get("devices", {}).get(h)
+            if dev and dev.get("active", True):
+                now = time.time()
+                if now - (dev.get("last_seen") or 0) > 20:  # throttle disk writes
+                    dev["last_seen"] = now
+                    _json_save(API_KEYS_FILE, data)
+                return {"kind": "device", "id": "dev:" + h[:12], "identity": dev["identity"], "name": dev.get("name")}
+    raise HTTPException(status_code=401, detail="Invalid worker token. Pair this computer again in Settings.")
+
+
+def _require_claim(request: Request, job_id: str) -> tuple[dict, dict]:
+    who = _worker_principal(request)
+    if not JOB_ID_RE.match(job_id):
+        raise HTTPException(status_code=404, detail="Job not found.")
+    job = _get_job(job_id)
+    if not job or job.get("status") != "processing" or job.get("claimed_by") != who["id"]:
+        raise HTTPException(status_code=409, detail="This job isn't claimed by this worker (it may have timed out).")
+    return who, job
 
 
 # ── Pages ────────────────────────────────────────────────────────────────────
@@ -590,6 +763,8 @@ def usage(request: Request):
         "email_configured": config.EMAIL_CONFIGURED,
         "stripe_configured": config.STRIPE_CONFIGURED,
         "contact_email": config.CONTACT_EMAIL,
+        "devices": _devices_for(identity),
+        "own_daily_limit": config.OWN_DEVICE_DAILY_LIMIT,
     })
     set_cid_cookie(resp, request)
     # Migrate legacy unsigned customer cookies / remember an email-found customer.
@@ -672,8 +847,11 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
                   notify_email: str | None = Form(None), clip_format: str = Form("vertical"),
                   caption_style: str = Form("bold"), layout: str = Form("crop"),
                   clip_length: str = Form("medium"), n_clips: int = Form(3),
-                  watermark_text: str | None = Form(None), watermark_color: str | None = Form(None)):
+                  watermark_text: str | None = Form(None), watermark_color: str | None = Form(None),
+                  device: str = Form("cloud")):
     _validate_options(clip_format, caption_style, layout, clip_length)
+    if device not in ("cloud", "own"):
+        raise HTTPException(status_code=400, detail="device must be 'cloud' or 'own'.")
 
     if not check_ip_rate_limit(get_request_ip(request)):
         raise HTTPException(status_code=429, detail="Too many uploads from this network — please try again later.")
@@ -698,7 +876,9 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
     if notify_email and not EMAIL_RE.match(notify_email):
         raise HTTPException(status_code=400, detail="That doesn't look like a valid email address.")
 
-    n_clips = max(1, min(int(n_clips or 3), config.MAX_CLIPS[plan]))
+    # On your own computer you can ask for as many clips as any plan allows.
+    max_clips = max(config.MAX_CLIPS.values()) if device == "own" else config.MAX_CLIPS[plan]
+    n_clips = max(1, min(int(n_clips or 3), max_clips))
 
     # Custom watermark is a Pro Plus feature; anything else is ignored rather
     # than rejected so a stale localStorage preset can't block an upload.
@@ -708,15 +888,28 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         if watermark_color and re.fullmatch(r"#[0-9a-fA-F]{6}", watermark_color):
             wm_color = watermark_color
 
-    if _job_queue.full():
-        raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
+    if device == "own":
+        with _jobs_lock:
+            waiting = sum(1 for j in _jobs.values() if j.get("identity") == identity
+                          and j.get("device") == "own" and j.get("status") in ("queued", "processing"))
+        if waiting >= MAX_OWN_QUEUED_PER_USER:
+            raise HTTPException(status_code=429, detail=f"You already have {waiting} videos waiting for your computer — let it catch up first.")
+        if not reserve_own_daily(identity):
+            raise HTTPException(status_code=429, detail=f"You've processed {config.OWN_DEVICE_DAILY_LIMIT} videos on your own computer today — that's the daily cap. Try again tomorrow.")
+        reserve, refund = (lambda: True), (lambda: refund_own_daily(identity))
+    else:
+        if _cloud_queue_full():
+            raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes, or process on your own computer.")
+        reserve, refund = (lambda: reserve_use(identity, plan)), (lambda: refund_use(identity))
 
-    if not reserve_use(identity, plan):
+    if not reserve():
         limit = PLAN_LIMITS[plan]
         msg = (f"You've used all {limit} videos on the {PLAN_LABELS[plan]} plan this month "
                f"(resets {_next_reset_iso()}).")
         if plan != "plus":
-            msg += " Upgrade for more videos per month."
+            msg += " Upgrade for more videos per month"
+        msg += (" — or pair your own computer in Settings: videos it processes don't use your allowance."
+                if plan != "plus" else " Videos processed on your own computer don't count toward this.")
         raise HTTPException(status_code=402, detail=msg)
 
     job_id = _new_job_id()
@@ -728,11 +921,11 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
         await _save_upload(file, input_path)
     except HTTPException:
         shutil.rmtree(job_dir, ignore_errors=True)
-        refund_use(identity)
+        refund()
         raise
     except Exception:
         shutil.rmtree(job_dir, ignore_errors=True)
-        refund_use(identity)
+        refund()
         log.exception("upload failed")
         raise HTTPException(status_code=500, detail="Upload failed — please try again.")
 
@@ -740,14 +933,15 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
              plan=plan, input_path=str(input_path), created_at=time.time(), dub_lang=dub_lang,
              notify_email=notify_email, clip_format=clip_format, caption_style=caption_style,
              layout=layout, clip_length=clip_length, n_clips=n_clips,
-             watermark_text=wm_text, watermark_color=wm_color, filename=(file.filename or "")[:120])
+             watermark_text=wm_text, watermark_color=wm_color, filename=(file.filename or "")[:120],
+             device=device, counted=device == "cloud")
     try:
         _enqueue(job_id, 0 if is_pro else 1)
     except queue.Full:
         shutil.rmtree(job_dir, ignore_errors=True)
         with _jobs_lock:
             _jobs.pop(job_id, None)
-        refund_use(identity)
+        refund()
         raise HTTPException(status_code=503, detail="We're at capacity right now — try again in a few minutes.")
 
     resp = JSONResponse({"job_id": job_id, "status": "queued"})
@@ -778,13 +972,17 @@ def _require_job(request: Request, job_id: str) -> dict:
 @app.get("/job/{job_id}")
 def job_status(job_id: str, request: Request):
     job = _require_job(request, job_id)
-    out = {"job_id": job_id, "status": job["status"]}
+    out = {"job_id": job_id, "status": job["status"], "device": job.get("device", "cloud")}
     if job["status"] == "queued":
         out["queue_position"] = _queue_position(job_id)
+        if job.get("device") == "own":
+            out["device_online"] = any(d["online"] for d in _devices_for(job["identity"]))
     elif job["status"] == "processing":
         out["elapsed"] = round(time.time() - job.get("started_at", time.time()))
         out["stage"] = job.get("stage")
         out["progress"] = job.get("progress", 0)
+        if job.get("worker_name"):
+            out["worker_name"] = job["worker_name"]
     elif job["status"] == "done":
         out["clips"] = job["clips"]
         out["duration"] = job["duration"]
@@ -835,6 +1033,203 @@ def get_clip(job_id: str, filename: str, download: int = 0):
     return FileResponse(str(path), media_type=media, headers=headers)
 
 
+# ── Own hardware: pairing + worker API ───────────────────────────────────────
+
+def _device_owner_identity(request: Request) -> str:
+    if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
+        raise HTTPException(status_code=401, detail="Sign in to pair a computer.")
+    return get_identity(request)
+
+
+@app.get("/devices")
+def list_devices(request: Request):
+    identity = _device_owner_identity(request)
+    return {"devices": _devices_for(identity), "daily_limit": config.OWN_DEVICE_DAILY_LIMIT}
+
+
+@app.post("/devices")
+async def create_device(request: Request):
+    identity = _device_owner_identity(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    name = re.sub(r"[^\w .'-]", "", str(body.get("name") or "My computer"))[:40] or "My computer"
+    if len(_devices_for(identity)) >= config.MAX_DEVICES_PER_USER:
+        raise HTTPException(status_code=400, detail=f"You can pair up to {config.MAX_DEVICES_PER_USER} computers. Remove one first.")
+    token = f"pd_{uuid.uuid4().hex}{uuid.uuid4().hex[:8]}"
+    with _api_lock:
+        data = _load_api_data()
+        data.setdefault("devices", {})[_hash_key(token)] = {
+            "identity": identity, "name": name, "created": time.time(), "last_seen": None, "active": True}
+        _json_save(API_KEYS_FILE, data)
+    resp = JSONResponse({"token": token, "name": name, "server": config.SITE_URL})
+    set_cid_cookie(resp, request)  # anonymous users: pin the identity the device belongs to
+    return resp
+
+
+@app.delete("/devices/{device_id}")
+def delete_device(device_id: str, request: Request):
+    identity = _device_owner_identity(request)
+    with _api_lock:
+        data = _load_api_data()
+        for h, d in data.get("devices", {}).items():
+            if len(device_id) >= 12 and h.startswith(device_id) and d.get("identity") == identity:
+                d["active"] = False
+                _json_save(API_KEYS_FILE, data)
+                return {"removed": True}
+    raise HTTPException(status_code=404, detail="Computer not found.")
+
+
+def _job_spec(job_id: str, job: dict) -> dict:
+    return {
+        "job_id": job_id,
+        "input_url": f"/worker/jobs/{job_id}/input",
+        "input_ext": Path(job.get("input_path", "x.mp4")).suffix,
+        "options": {k: job.get(k) for k in ("n_clips", "dub_lang", "clip_format", "caption_style", "layout",
+                                            "clip_length", "watermark_text", "watermark_color")},
+        "watermark": not job.get("is_pro", False),
+        "lease_seconds": LEASE_SECONDS,
+    }
+
+
+@app.post("/worker/claim")
+async def worker_claim(request: Request):
+    """Hands the next job to an external worker, or 204 if there's none."""
+    who = _worker_principal(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    info = {k: str(body.get(k, ""))[:80] for k in ("hostname", "gpu", "whisper_model", "encoder", "version")}
+    if who["kind"] == "device":
+        with _api_lock:
+            data = _load_api_data()
+            for h, d in data.get("devices", {}).items():
+                if who["id"] == "dev:" + h[:12]:
+                    d["info"] = info
+            _json_save(API_KEYS_FILE, data)
+    _expire_leases()
+    with _jobs_lock:
+        if who["kind"] == "device":
+            candidates = [(j.get("seq", 0), jid) for jid, j in _jobs.items()
+                          if j.get("status") == "queued" and j.get("device") == "own" and j.get("identity") == who["identity"]]
+        else:
+            candidates = [((j.get("priority", 1), j.get("seq", 0)), jid) for jid, j in _jobs.items()
+                          if j.get("status") == "queued" and j.get("device", "cloud") == "cloud"]
+    for _, jid in sorted(candidates):
+        if _try_claim(jid, who["id"]):
+            _set_job(jid, worker_name=who.get("name") or info.get("hostname") or "worker")
+            log.info("job %s claimed by %s", jid, who["id"])
+            return _job_spec(jid, _get_job(jid))
+    return Response(status_code=204)
+
+
+@app.get("/worker/jobs/{job_id}/input")
+def worker_input(job_id: str, request: Request):
+    _, job = _require_claim(request, job_id)
+    path = Path(job.get("input_path", ""))
+    if not path.is_file():
+        raise HTTPException(status_code=410, detail="The upload is gone.")
+    return FileResponse(str(path), media_type="application/octet-stream")
+
+
+@app.post("/worker/jobs/{job_id}/progress")
+async def worker_progress(job_id: str, request: Request):
+    _require_claim(request, job_id)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    stage = body.get("stage") if body.get("stage") in ("transcribing", "finding_moments", "rendering", "uploading") else None
+    progress = max(0, min(99, int(body.get("progress") or 0)))
+    fields = {"progress": progress, "lease_until": time.time() + LEASE_SECONDS}
+    if stage:
+        fields["stage"] = "rendering" if stage == "uploading" else stage
+    _set_job(job_id, **fields)
+    return {"ok": True, "lease_seconds": LEASE_SECONDS}
+
+
+@app.post("/worker/jobs/{job_id}/fail")
+async def worker_fail(job_id: str, request: Request):
+    _require_claim(request, job_id)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    reason = re.sub(r"[\x00-\x1f<>]", " ", str(body.get("error") or ""))[:300]
+    _fail_job(job_id, _friendly_error(RuntimeError(reason)) if not body.get("user_error") else reason)
+    return {"ok": True}
+
+
+MAX_RESULT_FILES = 2 * max(config.MAX_CLIPS.values())
+
+
+@app.post("/worker/jobs/{job_id}/result")
+async def worker_result(job_id: str, request: Request):
+    """Receives finished clips from an external worker. Everything in the
+    manifest is re-validated here: the worker runs on a machine we don't
+    control, so it's treated like any other upload."""
+    _, job = _require_claim(request, job_id)
+    form = await request.form(max_files=MAX_RESULT_FILES + 1)
+    try:
+        manifest = json.loads(form.get("manifest") or "")
+        duration = float(form.get("duration") or 0)
+        language = re.sub(r"[^a-z-]", "", str(form.get("language") or ""))[:8] or None
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid manifest.")
+    if not isinstance(manifest, list) or not manifest or len(manifest) > max(config.MAX_CLIPS.values()):
+        raise HTTPException(status_code=400, detail="Manifest must list 1-8 clips.")
+
+    uploads = {f.filename: f for f in form.getlist("files") if hasattr(f, "filename")}
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    max_bytes = config.MAX_UPLOAD_MB * 1024 * 1024
+    clips = []
+    try:
+        for i, c in enumerate(manifest, 1):
+            name, srt = str(c.get("file", "")), c.get("srt")
+            if not SAFE_FILENAME_RE.match(name) or not name.endswith(".mp4") or name not in uploads:
+                raise HTTPException(status_code=400, detail=f"Clip {i}: missing or invalid file.")
+            if srt is not None and (not SAFE_FILENAME_RE.match(str(srt)) or not str(srt).endswith(".srt") or srt not in uploads):
+                srt = None
+            for fname in filter(None, (name, srt)):
+                dest, size = job_dir / fname, 0
+                with open(dest, "wb") as out:
+                    while chunk := await uploads[fname].read(1024 * 1024):
+                        size += len(chunk)
+                        if size > max_bytes:
+                            raise HTTPException(status_code=413, detail="Clip file too large.")
+                        out.write(chunk)
+            clips.append({
+                "rank": i, "start": round(float(c.get("start", 0)), 2), "end": round(float(c.get("end", 0)), 2),
+                "virality_score": max(0, min(100, int(c.get("virality_score", 50)))),
+                "score": float(c.get("score", 0) or 0),
+                "text": str(c.get("text", ""))[:3000], "title": str(c.get("title", ""))[:120],
+                "hashtags": [str(h)[:40] for h in (c.get("hashtags") or [])][:8],
+                "file": name, "srt": srt,
+            })
+    except HTTPException:
+        raise
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid manifest values.")
+    (job_dir / "manifest.json").write_text(json.dumps(clips, indent=2))
+    _finish_job(job_id, clips, duration, language)
+    log.info("job %s finished by external worker (%d clips)", job_id, len(clips))
+    return {"ok": True, "clips": len(clips)}
+
+
+@app.get("/worker/bundle.zip")
+def worker_bundle():
+    """Everything a computer needs to run peakcut_worker.py, in one download."""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in ("peakcut_worker.py", "pipeline_lib.py", "dub_lib.py", "requirements-worker.txt"):
+            zf.write(BASE_DIR / name, arcname=f"peakcut-worker/{name}")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="peakcut-worker.zip"'})
+
+
 # ── Account ──────────────────────────────────────────────────────────────────
 
 @app.post("/account/delete")
@@ -852,6 +1247,7 @@ def delete_account(request: Request):
     with _api_lock:
         data = _load_api_data()
         data["keys"] = {h: k for h, k in data["keys"].items() if k.get("identity") != identity}
+        data["devices"] = {h: d for h, d in data.get("devices", {}).items() if d.get("identity") != identity}
         data["usage"].pop(identity, None)
         _json_save(API_KEYS_FILE, data)
     with _jobs_lock:
@@ -1097,7 +1493,7 @@ async def api_process(request: Request, file: UploadFile = File(...), clip_forma
     # Validate everything before counting usage, so a typo doesn't burn a call.
     _validate_options(clip_format, caption_style, layout, clip_length)
     ext = _validate_ext(file.filename)
-    if _job_queue.full():
+    if _cloud_queue_full():
         raise HTTPException(status_code=503, detail="Server queue full, please try again shortly.", headers={"Retry-After": "120"})
     if not check_ip_rate_limit(f"api:{key_info['identity']}", limit=30):
         raise HTTPException(status_code=429, detail="Too many requests — max 30 videos per hour.", headers={"Retry-After": "600"})

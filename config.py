@@ -79,3 +79,16 @@ MAX_API_KEYS_PER_USER = 5
 JOB_RETENTION_HOURS = 24
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "300"))
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
+
+# ── Own hardware ─────────────────────────────────────────────────────────────
+# Run the built-in worker thread on this server (set 0 to have only external
+# workers — e.g. your own GPU PC running peakcut_worker.py — process the
+# cloud queue, keeping a tiny free-tier host as a pure web front).
+LOCAL_WORKER_ENABLED = os.environ.get("LOCAL_WORKER_ENABLED", "1").lower() not in ("0", "false", "no")
+# Secret for the site owner's own worker machines (any cloud job). Empty = off.
+WORKER_TOKEN = os.environ.get("WORKER_TOKEN", "")
+# Videos per day a user can process on their own paired computer. These don't
+# use the monthly allowance (their hardware did the work); this cap only
+# bounds storage for the finished clips.
+OWN_DEVICE_DAILY_LIMIT = int(os.environ.get("OWN_DEVICE_DAILY_LIMIT", "30"))
+MAX_DEVICES_PER_USER = 3

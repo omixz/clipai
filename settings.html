@@ -89,6 +89,28 @@
       <button class="primary" id="billingBtn" onclick="window.location.href='/billing-portal'">Manage billing / cancel</button>
     </div>
 
+    <div class="section" id="computers">
+      <h2>Your computers</h2>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Let your own PC (or GPU) make the clips. Pick <strong>My computer</strong> when uploading and it does the transcription and rendering — those videos don't use your monthly allowance (up to <span id="ownDaily">30</span> a day). Upload from your phone; your computer at home does the work.</p>
+      <div id="devicesList"></div>
+      <div class="form-group" style="margin-top:12px">
+        <label for="deviceName">Computer name</label>
+        <input type="text" id="deviceName" maxlength="40" placeholder="e.g. Gaming PC, MacBook" />
+      </div>
+      <button class="primary" onclick="pairDevice()">Pair a computer</button>
+      <div id="pairResult" style="display:none; margin-top:16px;">
+        <p class="notice"><strong>Copy this now — the token is shown once.</strong> On the computer (needs Python 3.10+ and ffmpeg):</p>
+        <ol style="font-size:0.88rem; color: var(--muted); padding-left: 18px;">
+          <li>Download <a href="/worker/bundle.zip" style="color:var(--accent)">peakcut-worker.zip</a> and unzip it.</li>
+          <li>In that folder: <code>pip install -r requirements-worker.txt</code></li>
+          <li>Run the command below and leave it running:</li>
+        </ol>
+        <pre id="pairCmd" style="white-space:pre-wrap;word-break:break-all;background:#16141f;color:#f4f4f4;padding:12px;border-radius:8px;font-size:0.8rem"></pre>
+        <button class="secondary" onclick="navigator.clipboard.writeText(document.getElementById('pairCmd').textContent).then(()=>this.textContent='✓ Copied')">Copy command</button>
+        <p style="font-size:0.8rem;color:var(--muted)">NVIDIA GPUs, Intel Quick Sync, AMD and Apple Silicon are used automatically when available. Prefer no account at all? <code>python peakcut_worker.py --local video.mp4</code> works fully offline.</p>
+      </div>
+    </div>
+
     <div id="watermarkSection" style="display:none;">
       <div class="section">
         <h2>Custom Watermark <span class="pro-badge">Pro Plus</span></h2>
@@ -215,6 +237,8 @@
             (data.google_configured && !data.signed_in ? 'Paid before? <a href="/auth/google/login?next=/settings" style="color:var(--accent)">Sign in</a> with the email you paid with to restore your plan.' : 'Paid before? Sign in with the same email you paid with and your plan is restored automatically.') + '</p>';
           document.getElementById('billingBtn').textContent = 'Open billing portal';
         }
+        document.getElementById('ownDaily').textContent = data.own_daily_limit;
+        renderDevices(data.devices || []);
         loadApiKeys(data);
         loadPresets();
       } catch (e) {
@@ -313,6 +337,38 @@
         </div></div>`).join('');
       list.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', () => revokeKey(b.dataset.revoke)));
     }
+
+    function renderDevices(devices) {
+      const list = document.getElementById('devicesList');
+      if (!devices.length) { list.innerHTML = '<p style="color: var(--muted); font-size: 0.9rem;">No computers paired yet.</p>'; return; }
+      list.innerHTML = devices.map(d => `
+        <div class="api-keys"><div class="key-item">
+          <div><strong>${escapeHtml(d.name)}</strong> <span style="font-size:0.75rem;color:${d.online ? '#1f9d55' : 'var(--muted)'}">● ${d.online ? 'online' : 'offline'}</span><br/>
+            <span style="font-size: 0.75rem; opacity: 0.7;">${escapeHtml([d.info && d.info.gpu && d.info.gpu !== 'none' ? 'GPU: ' + d.info.gpu : '', d.info && d.info.whisper_model ? 'model: ' + d.info.whisper_model : '', d.info && d.info.encoder ? 'encoder: ' + d.info.encoder : '', d.last_seen ? 'last seen ' + new Date(d.last_seen * 1000).toLocaleString() : 'never connected'].filter(Boolean).join(' · '))}</span></div>
+          <button class="secondary" style="padding: 6px 12px; font-size: 0.85rem;" data-unpair="${escapeHtml(d.id)}">Remove</button>
+        </div></div>`).join('');
+      list.querySelectorAll('[data-unpair]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Remove this computer? Its worker will stop receiving videos.')) return;
+        await fetch(`/devices/${encodeURIComponent(b.dataset.unpair)}`, { method: 'DELETE' });
+        loadSettings();
+      }));
+    }
+
+    async function pairDevice() {
+      const name = document.getElementById('deviceName').value.trim() || 'My computer';
+      const res = await fetch('/devices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not pair a computer.'); return; }
+      const server = data.server && !/localhost|127\.0\.0\.1/.test(data.server) ? data.server : location.origin;
+      document.getElementById('pairCmd').textContent = `python peakcut_worker.py --server ${server} --token ${data.token}`;
+      document.getElementById('pairResult').style.display = 'block';
+      document.getElementById('deviceName').value = '';
+      const devices = await (await fetch('/devices')).json();
+      renderDevices(devices.devices || []);
+    }
+    setInterval(async () => {
+      try { const d = await (await fetch('/devices')).json(); if (d.devices) renderDevices(d.devices); } catch (e) {}
+    }, 15000);
 
     async function deleteAllData() {
       if (!confirm('Delete your clips, usage history and API keys? This cannot be undone.')) return;

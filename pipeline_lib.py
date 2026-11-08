@@ -25,6 +25,12 @@ from faster_whisper import WhisperModel
 
 WATERMARK = "Made with Peakcut"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "tiny")
+# "cpu" (default, what the 512MB server uses), "cuda", or "auto" (GPU if one
+# is usable). Own-hardware workers set these — see peakcut_worker.py.
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+# libx264 (default) or a hardware encoder: h264_nvenc, h264_qsv,
+# h264_videotoolbox (macOS), h264_amf.
+VIDEO_ENCODER = os.environ.get("PEAKCUT_VIDEO_ENCODER", "libx264")
 
 FONT_DIR_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -52,7 +58,15 @@ _model = None
 def get_model():
     global _model
     if _model is None:
-        _model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+        device = WHISPER_DEVICE
+        if device == "auto":
+            try:
+                import ctranslate2
+                device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+            except Exception:
+                device = "cpu"
+        compute = os.environ.get("WHISPER_COMPUTE_TYPE") or ("float16" if device == "cuda" else "int8")
+        _model = WhisperModel(WHISPER_MODEL, device=device, compute_type=compute)
     return _model
 
 
@@ -397,6 +411,19 @@ def build_filtergraph(clip_format, layout, srt_name, caption_style, watermark_fi
     return graph
 
 
+def encoder_args(encoder):
+    """Quality-equivalent settings per H.264 encoder (each takes different flags)."""
+    if encoder == "h264_nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "0"]
+    if encoder == "h264_qsv":
+        return ["-c:v", "h264_qsv", "-global_quality", "23"]
+    if encoder == "h264_videotoolbox":
+        return ["-c:v", "h264_videotoolbox", "-q:v", "65"]
+    if encoder == "h264_amf":
+        return ["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "22", "-qp_p", "24"]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21"]
+
+
 def render_segment(video_path, start, end, srt_path, out_path, clip_format="vertical", layout="crop",
                    caption_style="bold", watermark_text=None, watermark_color=None, audio_path=None):
     """Cut [start, end] from video_path, reframe, burn captions + optional
@@ -417,7 +444,7 @@ def render_segment(video_path, start, end, srt_path, out_path, clip_format="vert
         cmd += ["-i", os.path.abspath(audio_path)]
     cmd += ["-filter_complex", graph, "-map", "[v]"]
     cmd += ["-map", "1:a:0"] if audio_path else ["-map", "0:a:0?"]
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+    cmd += encoder_args(VIDEO_ENCODER) + ["-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"]
     if audio_path:
         cmd += ["-shortest"]

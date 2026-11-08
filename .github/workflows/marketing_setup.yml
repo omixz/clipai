@@ -1,0 +1,39 @@
+name: Marketing setup check
+
+# Manual. Lists the channels your Buffer key can see (copy the TikTok and
+# Instagram ids into secrets), shows which metadata fields Buffer accepts, and
+# — with "probe" ticked — saves a 3-second DRAFT on each channel to prove the
+# whole chain works. Nothing is published. The report is opened as an issue.
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "Also save a test draft on each channel"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg && pip install requests
+      - run: python autopilot/buffer_check.py ${{ inputs.probe && '--probe' || '' }}
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_TIKTOK_CHANNEL_ID: ${{ secrets.BUFFER_TIKTOK_CHANNEL_ID }}
+          BUFFER_INSTAGRAM_CHANNEL_ID: ${{ secrets.BUFFER_INSTAGRAM_CHANNEL_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Post the report as an issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh issue create --title "Marketing setup check (run ${{ github.run_id }})" --body-file buffer_report.md || true
