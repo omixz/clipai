@@ -19,6 +19,6 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           pip install fastapi "uvicorn[standard]" python-multipart stripe httpx "pyjwt[crypto]" itsdangerous \
-                      faster-whisper "av>=11,<16" requests pytest
+                      faster-whisper "av>=11,<16" requests numpy pytest
       - name: Tests
         run: python -m pytest -q tests

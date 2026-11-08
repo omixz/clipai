@@ -15,7 +15,14 @@ def test_every_bank_line_passes_the_claims_guard():
     assert set(content.BANK) == set(video.MOTIFS) == set(content.CAPTIONS)
 
 
+def test_instagram_text_keeps_hashtags_for_the_first_comment():
+    c = content.pick([], motif="growth", seed=3, allow_generate=False)
+    assert "#" not in content.post_text(c, "instagram") and "#" in content.post_text(c, "tiktok")
+    assert c["theme"] == "gold"
+
+
 @pytest.mark.parametrize("line", [
+    "get rich with clips.", "earn while you sleep.", "make money posting.", "passive income.", "quit your job.",
     "this will go viral.", "the best tool ever.", "Uppercase line.", "no full stop", "unlimited clips.",
     "better than opus.", "free forever.", "100 clips a day.", "wow!", "a line that is far far too long to fit.",
 ])
@@ -40,7 +47,8 @@ def test_post_text_has_cta_and_hashtags():
     c = content.pick([], motif="computer", seed=1, allow_generate=False)
     for platform in ("tiktok", "instagram"):
         text = content.post_text(c, platform)
-        assert "link in bio" in text and "#" in text and len(text) < 2200
+        assert "link in bio" in text and len(text) < 2200
+    assert "#" in content.post_text(c, "tiktok")
 
 
 def test_generated_lines_are_guarded(monkeypatch, tmp_path):
@@ -75,12 +83,42 @@ def test_buffer_post_falls_back_through_input_shapes(monkeypatch):
     def fake_post(url, **kw):
         inp = kw["json"]["variables"]["input"]
         calls.append(inp)
-        return R(ok="metadata" not in inp)  # pretend the schema rejects instagram metadata
+        # pretend the schema rejects the optional extras, accepting the minimal reel shape
+        return R(ok="isAiGenerated" not in inp["metadata"]["instagram"])
 
     monkeypatch.setattr(publish.requests, "post", fake_post)
-    assert publish.post_video("instagram", "https://x/v.mp4", "text", "title") == "p1"
-    assert calls[0]["metadata"]["instagram"]["type"] == "reel"
+    assert publish.post_video("instagram", "https://x/v.mp4", "text", "title", first_comment="#tags") == "p1"
+    assert calls[0]["metadata"]["instagram"] == {"type": "reel", "shouldShareToFeed": True, "isAiGenerated": False,
+                                                 "firstComment": "#tags"}
+    assert calls[-1]["metadata"]["instagram"] == {"type": "reel", "shouldShareToFeed": True}
     assert calls[-1]["channelId"] == "chan" and calls[-1]["assets"][0]["video"]["url"] == "https://x/v.mp4"
+    assert all(c["schedulingType"] == "automatic" for c in calls)
+
+
+def test_channel_discovery_and_trend_handoff(monkeypatch):
+    monkeypatch.setenv("BUFFER_API_KEY", "k")
+    monkeypatch.delenv("BUFFER_TIKTOK_CHANNEL_ID", raising=False)
+    publish._channel_cache.clear()
+    posted = []
+
+    class R:
+        status_code = 200
+        def __init__(self, data): self.data = data
+        def raise_for_status(self): pass
+        def json(self): return self.data
+
+    def fake_post(url, **kw):
+        q = kw["json"]["query"]
+        if "organizations" in q:
+            return R({"data": {"account": {"organizations": [{"id": "org1"}]}}})
+        if "channels(" in q:
+            return R({"data": {"channels": [{"id": "ig1", "service": "instagram"}, {"id": "tt1", "service": "tiktok"}]}})
+        posted.append(kw["json"]["variables"]["input"])
+        return R({"data": {"createPost": {"post": {"id": "p9"}}}})
+
+    monkeypatch.setattr(publish.requests, "post", fake_post)
+    assert publish.post_video("tiktok", "u", "t", "t", handoff=True) == "p9"
+    assert posted[0]["channelId"] == "tt1" and posted[0]["schedulingType"] == "notification"
 
 
 def test_post_requires_secrets(monkeypatch):
@@ -91,7 +129,12 @@ def test_post_requires_secrets(monkeypatch):
 
 def test_run_posts_each_platform_independently(monkeypatch, tmp_path):
     monkeypatch.setattr(run, "LEDGER", tmp_path / "ledger.json")
-    monkeypatch.setattr(video, "render", lambda spec, mp4, work: mp4.parent.mkdir(parents=True, exist_ok=True) or mp4.write_bytes(b"v") or {})
+    def fake_render(spec, mp4, work, **kw):
+        mp4.parent.mkdir(parents=True, exist_ok=True)
+        mp4.write_bytes(b"v")
+        return {"duration": 7.5, "cues": []}
+
+    monkeypatch.setattr(video, "render", fake_render)
     monkeypatch.setattr(video, "contact_sheet", lambda *a: None)
     monkeypatch.setattr(publish, "host_on_github_release", lambda path, name: "https://host/" + name)
 
@@ -127,3 +170,41 @@ def test_render_real_reel(tmp_path):
     streams = json.loads(out)["streams"]
     assert {"codec_type": "video", "width": 1080, "height": 1920} in streams
     assert any(s["codec_type"] == "audio" for s in streams)
+
+
+def _click_track(path, bpm=120.0, first=0.25, seconds=30, sr=22050):
+    import wave
+    import numpy as np
+    y = np.zeros(int(sr * seconds))
+    period = 60 / bpm
+    for b in np.arange(first, seconds, period):
+        i = int(b * sr)
+        n = int(0.12 * sr)
+        tt = np.arange(n) / sr
+        y[i:i + n] += np.sin(2 * np.pi * 60 * tt) * np.exp(-tt * 25)
+        h = int((b + period / 2) * sr)
+        if h + 400 < len(y):
+            y[h:h + 400] += 0.2 * np.random.default_rng(int(b * 100)).standard_normal(400)
+    y /= np.abs(y).max() * 1.2
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((y * 32767).astype("<i2").tobytes())
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+def test_beat_detection_and_warp(tmp_path):
+    import numpy as np
+    from autopilot import music
+    track = tmp_path / "t.wav"
+    _click_track(track, bpm=120.0, first=0.25)
+    info = music.analyze(track)
+    assert abs(info["bpm"] - 120) < 1.5
+    true = np.arange(0.25, 30, 0.5)
+    err = np.mean([np.min(np.abs(true - b)) for b in info["beats"]])
+    assert err < 0.04, err  # within ~one video frame
+    anchors = music.plan_warp([0.3, 1.75, 2.2, 3.15, 6.0], 7.4, info["period"])
+    assert anchors[0] == [0.0, 0.0] and len(anchors) >= 3
+    for v, s in anchors[1:]:
+        assert abs(v / info["period"] - round(v / info["period"])) < 1e-3  # every anchor on a beat
+    # the warp is monotonic and invertible
+    assert music.video_time(anchors, 6.0) > music.video_time(anchors, 3.15)

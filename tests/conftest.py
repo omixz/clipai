@@ -34,3 +34,7 @@ def client(appmod):
 
 
 VIDEO = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64  # bytes are never decoded in these tests
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "locked: run without the own-hardware entitlement")

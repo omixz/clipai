@@ -52,7 +52,9 @@
     a.textContent = lines[0] || '';
     b.textContent = lines[1] || '';
     return t => {
-      const intro = P(t, .15, .5, ease.out2);
+      // visible from the very first frame: frame 0 is the thumbnail, and the
+      // first second decides whether someone keeps watching
+      const intro = 1;
       const sw = lines.length > 1 ? P(t, swapAt, .35, ease.inOut2) : 0;
       a.style.opacity = intro * (1 - sw);
       a.style.transform = `translateY(${(1 - intro) * 14 - sw * 10}px)`;

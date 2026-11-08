@@ -17,13 +17,32 @@ Twice a day, with nobody involved, GitHub Actions:
 | `split` | one wide frame sliced into three vertical clips | one video, many posts |
 | `credits` | a grid of credits quietly expiring; one steady dot with twelve month ticks | no credits, no expiry |
 | `computer` | a monitor outline; the dot drops in; three clips appear | process on your own computer |
+| `growth` (gold) | a compounding line climbs while a number counts 1 → 7 posts a week | one recording becomes daily posting |
+
+## Sound: beat-synced music, and real trending sounds
+
+- **Music library.** Put licensed tracks in `assets/music/` (see the README there for safe sources). Each post:
+  - takes the next track in rotation;
+  - detects its tempo and beats (to within about one frame);
+  - uses the track's most energetic stretch;
+  - time-warps the animation so every cut, hop and the final full stop lands on a beat.
+
+  With no tracks, reels use a soft synthesized pad.
+- **Trending sounds (TikTok).** No posting API can attach an in-app trending sound, and pasting a hit song into the file gets videos muted. Set the repo **variable** `TIKTOK_TREND_HANDOFF=1`, or tick `trend_handoff` on a manual run. TikTok posts then go out in Buffer's *notification* mode with a quiet version of the reel: Buffer pings your phone, you tap a trending sound and post. That's about 20 seconds a day. Instagram stays fully automatic.
+- **Hashtags.** Put current tags in `state/hashtags.json` (`{"tiktok": "#a #b", "instagram": "#c #d"}`); the next post uses them. Instagram's hashtags go in the first comment, keeping the caption clean.
+
+## On "make people feel rich"
+
+The `growth` motif and gold theme give the aspirational, momentum feel: one recording becomes seven posts a week. The bot deliberately **won't claim people will make money**. The claims guard blocks words like rich, money, income, earn, passive and quit your job, for three reasons:
+- Peakcut doesn't make anyone money, so the claim would be false.
+- Unsubstantiated earnings claims are illegal advertising (FTC).
+- TikTok and Instagram throttle or remove get-rich content, which kills reach rather than helping it go viral.
 
 ## Setup (once, about 10 minutes)
 
 1. **Buffer.** Create a Buffer account and connect your **TikTok** and your **Instagram Business/Creator** account. Instagram personal accounts can't be auto-published. Then create an API key.
-2. **Repo secrets** (Settings → Secrets and variables → Actions):
-   - `BUFFER_API_KEY`
-   - `BUFFER_TIKTOK_CHANNEL_ID` and `BUFFER_INSTAGRAM_CHANNEL_ID`. Run **Actions → Marketing setup check** to list your channel ids.
+2. **Repo secret** `BUFFER_API_KEY` (Settings → Secrets and variables → Actions). That's all the bot needs: it finds your TikTok and Instagram channels on the account automatically.
+   - Optional: `BUFFER_TIKTOK_CHANNEL_ID` / `BUFFER_INSTAGRAM_CHANNEL_ID`, only to pick specific channels when you have several.
    - Optional: `GEMINI_API_KEY`, a free key from aistudio.google.com. It's only used once the built-in lines run out.
 3. **Prove it.** Run **Marketing setup check** with "probe" ticked. It saves a 3-second **draft** on each channel; nothing is published. Delete the drafts in Buffer afterwards.
 4. **Preview.** Run **Marketing autopilot** with `dry_run` ticked and download the `reel-…` artifact (the mp4 plus a contact sheet with the platform UI areas marked).
@@ -47,5 +66,9 @@ python -m autopilot.run --dry-run --motif computer
 ## Notes
 
 - **AI labels.** TikTok's `isAiGenerated` is set only when Gemini wrote the lines. The motion graphics themselves are made by code.
-- **Field names.** Buffer's TikTok fields were confirmed in YT-AUTO. The Instagram field names (`type: "reel"`, `shouldShareToFeed`) are best-effort. `publish.py` retries without them if Buffer rejects them, and the setup check prints the exact fields your account accepts.
+- **Field names.** The Buffer field names were confirmed by introspecting the live schema in November 2026:
+  - Instagram: `type: "reel"` and `shouldShareToFeed` (both required), plus `firstComment` and `isAiGenerated`.
+  - TikTok: `title` and `isAiGenerated`.
+
+  The setup check re-prints them, in case Buffer changes its schema.
 - **Analytics.** Nothing feeds back into the bandit yet. Once there's a few weeks of posts, the obvious next step is to weight motifs by views, the way YT-AUTO's `sync_analytics.py` does for YouTube.

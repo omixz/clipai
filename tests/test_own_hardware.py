@@ -1,9 +1,20 @@
 import json
 import time
+from types import SimpleNamespace as NS
+
+import pytest
 
 from conftest import VIDEO
 
 OWNER = {"Authorization": "Bearer test-owner-token"}
+
+
+@pytest.fixture(autouse=True)
+def entitled(request, appmod, monkeypatch):
+    """Most tests here are about the feature itself, so grant it; the gate
+    tests opt out with the `locked` marker."""
+    if "locked" not in request.keywords:
+        monkeypatch.setattr(appmod, "get_entitlements", lambda req: {"plan": "free", "hardware": True})
 
 
 def upload(client, **data):
@@ -121,3 +132,33 @@ def test_worker_bundle_contains_what_the_worker_imports(client):
     names = zipfile.ZipFile(io.BytesIO(client.get("/worker/bundle.zip").content)).namelist()
     assert {"peakcut-worker/peakcut_worker.py", "peakcut-worker/pipeline_lib.py",
             "peakcut-worker/requirements-worker.txt"} <= set(names)
+
+
+@pytest.mark.locked
+def test_free_users_are_gated(client):
+    assert client.post("/devices", json={"name": "x"}).status_code == 402
+    r = upload(client, device="own")
+    assert r.status_code == 402 and "Pro" in r.json()["detail"]
+    u = client.get("/usage").json()
+    assert u["own_hardware"] is False and u["used"] == 0
+    assert upload(client).status_code == 200  # cloud still works
+
+
+@pytest.mark.locked
+def test_entitlements_from_stripe(appmod, monkeypatch):
+    monkeypatch.setattr(appmod.config, "STRIPE_CONFIGURED", True)
+    monkeypatch.setattr(appmod.config, "STRIPE_PRICE_ID_HARDWARE", "price_hw")
+    monkeypatch.setattr(appmod.config, "STRIPE_PRICE_ID_PLUS", "price_plus")
+    subs = {"cus_hw": ["price_hw"], "cus_pro": ["price_pro"], "cus_both": ["price_hw", "price_plus"], "cus_none": []}
+
+    def fake_list(customer, status, limit):
+        return NS(data=[{"status": "active", "items": {"data": [{"price": {"id": p}} for p in subs[customer]]}}])
+
+    monkeypatch.setattr(appmod.stripe.Subscription, "list", fake_list)
+    appmod.invalidate_plan_cache()
+    assert appmod.entitlements_for_customer("cus_hw") == {"plan": "free", "hardware": True}
+    assert appmod.entitlements_for_customer("cus_pro") == {"plan": "pro", "hardware": True}
+    assert appmod.entitlements_for_customer("cus_both") == {"plan": "plus", "hardware": True}
+    assert appmod.entitlements_for_customer("cus_none") == {"plan": "free", "hardware": False}
+    # the add-on alone must not count as a paid plan anywhere else
+    assert appmod.plan_for_customer("cus_hw") == "free"

@@ -41,7 +41,7 @@ Uploads are deleted as soon as clips are rendered; clips are deleted after 24 ho
 
 ## Process on your own hardware
 
-Users can make clips on their own computer instead of the shared server:
+Users can make clips on their own computer instead of the shared server. It's a **premium feature**: included with Pro and Pro Plus, or sold on its own as an add-on (set `STRIPE_PRICE_ID_HARDWARE` to a recurring Stripe price; pricing.html says $5/mo). Free users see it locked with an upsell, and pairing or "My computer" uploads return 402.
 
 1. **Settings → Your computers → Pair a computer** issues a device token (stored hashed, max 3 per user). The page shows the exact command to run.
 2. On that computer: download `/worker/bundle.zip` (or clone this repo), `pip install -r requirements-worker.txt`, then
@@ -54,6 +54,10 @@ Users can make clips on their own computer instead of the shared server:
 5. **Offline.** `python peakcut_worker.py --local video.mp4 --out clips/` works fully offline, with no account.
 
 **Owner capacity.** Set `WORKER_TOKEN` and run the same worker with that token on your own GPU box to drain the *cloud* queue. With `LOCAL_WORKER_ENABLED=0`, the 512MB host becomes a pure web front and all processing happens on your hardware.
+
+## Auto-posting with Buffer
+
+Each clip has an **🗓 Auto-post** button. It saves the clip, copies the title and hashtags, and opens Buffer, which schedules to TikTok, Reels and Shorts. Settings has an Auto-posting section too. Set `BUFFER_URL` to your Buffer affiliate link to earn from referrals.
 
 ## Marketing autopilot (TikTok + Instagram)
 

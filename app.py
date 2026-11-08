@@ -220,15 +220,19 @@ def invalidate_plan_cache(customer_id: str | None = None):
         _email_customer_cache.clear()
 
 
-def plan_for_customer(customer_id: str | None) -> str:
+def entitlements_for_customer(customer_id: str | None) -> dict:
+    """{"plan": free|pro|plus, "hardware": bool} from the customer's live
+    Stripe subscriptions. "hardware" is the own-hardware feature: included
+    with Pro/Pro Plus, or bought on its own as the add-on price."""
+    free = {"plan": "free", "hardware": False}
     if not customer_id or not config.STRIPE_CONFIGURED:
-        return "free"
+        return dict(free)
     now = time.time()
     with _cache_lock:
         hit = _plan_cache.get(customer_id)
         if hit and hit[1] > now:
-            return hit[0]
-    plan = "free"
+            return dict(hit[0])
+    ent = dict(free)
     try:
         subs = stripe.Subscription.list(customer=customer_id, status="all", limit=10)
         for sub in subs.data:
@@ -237,19 +241,28 @@ def plan_for_customer(customer_id: str | None) -> str:
             if sub["status"] not in ("active", "trialing", "past_due"):
                 continue
             for item in sub["items"]["data"]:
-                if item["price"]["id"] == config.STRIPE_PRICE_ID_PLUS:
-                    plan = "plus"
-                elif plan == "free":
-                    plan = "pro"
+                price = item["price"]["id"]
+                if config.STRIPE_PRICE_ID_HARDWARE and price == config.STRIPE_PRICE_ID_HARDWARE:
+                    ent["hardware"] = True
+                elif price == config.STRIPE_PRICE_ID_PLUS:
+                    ent["plan"] = "plus"
+                elif ent["plan"] == "free":
+                    ent["plan"] = "pro"
     except Exception:
         log.exception("Stripe subscription lookup failed")
         # Don't cache failures — and fall back to a previous good value if any.
         with _cache_lock:
             hit = _plan_cache.get(customer_id)
-        return hit[0] if hit else "free"
+        return dict(hit[0]) if hit else dict(free)
+    if ent["plan"] != "free":
+        ent["hardware"] = True
     with _cache_lock:
-        _plan_cache[customer_id] = (plan, now + PLAN_CACHE_SECONDS)
-    return plan
+        _plan_cache[customer_id] = (dict(ent), now + PLAN_CACHE_SECONDS)
+    return ent
+
+
+def plan_for_customer(customer_id: str | None) -> str:
+    return entitlements_for_customer(customer_id)["plan"]
 
 
 def customer_for_email(email: str | None) -> str | None:
@@ -267,7 +280,8 @@ def customer_for_email(email: str | None) -> str | None:
         customers = stripe.Customer.list(email=email, limit=10)
         best_rank = 0
         for c in customers.data:
-            rank = {"free": 0, "pro": 1, "plus": 2}[plan_for_customer(c["id"])]
+            ent = entitlements_for_customer(c["id"])
+            rank = {"free": 0, "pro": 2, "plus": 3}[ent["plan"]] or (1 if ent["hardware"] else 0)
             if found is None or rank > best_rank:
                 found, best_rank = c["id"], rank
     except Exception:
@@ -286,10 +300,22 @@ def get_customer_id(request: Request) -> str | None:
     return customer_for_email(account["email"]) if account else None
 
 
+def get_entitlements(request: Request) -> dict:
+    if not hasattr(request.state, "entitlements"):
+        request.state.entitlements = entitlements_for_customer(get_customer_id(request))
+    return request.state.entitlements
+
+
 def get_plan(request: Request) -> str:
-    if not hasattr(request.state, "plan"):
-        request.state.plan = plan_for_customer(get_customer_id(request))
-    return request.state.plan
+    return get_entitlements(request)["plan"]
+
+
+def has_own_hardware(request: Request) -> bool:
+    return get_entitlements(request)["hardware"]
+
+
+HARDWARE_LOCKED_MSG = ("Processing on your own computer is included with Pro and Pro Plus, "
+                       "or you can unlock it on its own (see Pricing).")
 
 
 def check_pro_status(request: Request) -> bool:
@@ -764,6 +790,9 @@ def usage(request: Request):
         "stripe_configured": config.STRIPE_CONFIGURED,
         "contact_email": config.CONTACT_EMAIL,
         "devices": _devices_for(identity),
+        "own_hardware": has_own_hardware(request),
+        "hardware_addon_available": config.STRIPE_CONFIGURED and bool(config.STRIPE_PRICE_ID_HARDWARE),
+        "buffer_url": config.BUFFER_URL,
         "own_daily_limit": config.OWN_DEVICE_DAILY_LIMIT,
     })
     set_cid_cookie(resp, request)
@@ -852,6 +881,8 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
     _validate_options(clip_format, caption_style, layout, clip_length)
     if device not in ("cloud", "own"):
         raise HTTPException(status_code=400, detail="device must be 'cloud' or 'own'.")
+    if device == "own" and not has_own_hardware(request):
+        raise HTTPException(status_code=402, detail=HARDWARE_LOCKED_MSG)
 
     if not check_ip_rate_limit(get_request_ip(request)):
         raise HTTPException(status_code=429, detail="Too many uploads from this network — please try again later.")
@@ -908,8 +939,8 @@ async def process(request: Request, file: UploadFile = File(...), dub_lang: str 
                f"(resets {_next_reset_iso()}).")
         if plan != "plus":
             msg += " Upgrade for more videos per month"
-        msg += (" — or pair your own computer in Settings: videos it processes don't use your allowance."
-                if plan != "plus" else " Videos processed on your own computer don't count toward this.")
+        if has_own_hardware(request):
+            msg += " Videos processed on your own computer don't count toward this."
         raise HTTPException(status_code=402, detail=msg)
 
     job_id = _new_job_id()
@@ -1044,7 +1075,8 @@ def _device_owner_identity(request: Request) -> str:
 @app.get("/devices")
 def list_devices(request: Request):
     identity = _device_owner_identity(request)
-    return {"devices": _devices_for(identity), "daily_limit": config.OWN_DEVICE_DAILY_LIMIT}
+    return {"devices": _devices_for(identity), "daily_limit": config.OWN_DEVICE_DAILY_LIMIT,
+            "own_hardware": has_own_hardware(request)}
 
 
 @app.post("/devices")
@@ -1054,6 +1086,8 @@ async def create_device(request: Request):
         body = await request.json()
     except Exception:
         body = {}
+    if not has_own_hardware(request):
+        raise HTTPException(status_code=402, detail=HARDWARE_LOCKED_MSG)
     name = re.sub(r"[^\w .'-]", "", str(body.get("name") or "My computer"))[:40] or "My computer"
     if len(_devices_for(identity)) >= config.MAX_DEVICES_PER_USER:
         raise HTTPException(status_code=400, detail=f"You can pair up to {config.MAX_DEVICES_PER_USER} computers. Remove one first.")
@@ -1322,7 +1356,7 @@ def logout():
 
 # ── Stripe billing ──────────────────────────────────────────────────────────
 
-def _start_checkout(request: Request, price_id: str, cancel_path: str):
+def _start_checkout(request: Request, price_id: str, cancel_path: str, addon: bool = False):
     if config.GOOGLE_SIGNIN_CONFIGURED and not get_account(request):
         return RedirectResponse("/auth/google/login?next=/pricing", status_code=303)
     if not config.STRIPE_CONFIGURED:
@@ -1330,7 +1364,9 @@ def _start_checkout(request: Request, price_id: str, cancel_path: str):
 
     plan = get_plan(request)
     customer = get_customer_id(request)
-    if plan != "free" and customer:
+    if addon and has_own_hardware(request):
+        return RedirectResponse("/settings#computers", status_code=303)  # already unlocked
+    if not addon and plan != "free" and customer:
         # Already subscribed: switching plans happens in the billing portal,
         # not a second subscription (which would double-charge).
         return RedirectResponse("/billing-portal", status_code=303)
@@ -1368,6 +1404,14 @@ def create_checkout_session(request: Request):
 @app.get("/create-checkout-session-plus")
 def create_checkout_session_plus(request: Request):
     return _start_checkout(request, config.STRIPE_PRICE_ID_PLUS, "/pricing")
+
+
+@app.get("/create-checkout-session-hardware")
+def create_checkout_session_hardware(request: Request):
+    """The own-hardware feature on its own, for Free users who don't need Pro."""
+    if not config.STRIPE_PRICE_ID_HARDWARE:
+        raise HTTPException(status_code=503, detail="The own-hardware add-on isn't on sale yet — it's included with Pro.")
+    return _start_checkout(request, config.STRIPE_PRICE_ID_HARDWARE, "/pricing", addon=True)
 
 
 @app.get("/billing-portal")

@@ -17,9 +17,11 @@ try { playwright = require('playwright'); } catch {
   playwright = require(`${root}/playwright`);
 }
 
-const [page, out, fpsArg] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const metaOnly = argv.includes('--meta');
+const [page, out, fpsArg] = argv.filter(a => a !== '--meta');
 const fps = Number(fpsArg || 30);
-if (!page || !out) { console.error('usage: node render.mjs page.html out.mp4 [fps]'); process.exit(2); }
+if (!page || (!out && !metaOnly)) { console.error('usage: node render.mjs page.html out.mp4 [fps]'); process.exit(2); }
 
 const browser = await playwright.chromium.launch();
 try {
@@ -30,7 +32,9 @@ try {
   await p.goto(pathToFileURL(page).href);
   await p.evaluate(() => document.fonts.ready);
   if (errors.length) throw new Error('page error: ' + errors.join('; '));
-  const meta = await p.evaluate(() => ({ duration: window.SCENE.duration, cues: window.SCENE.cues }));
+  const meta = await p.evaluate(() => ({ duration: window.SCENE.duration, cues: window.SCENE.cues,
+    sceneDuration: window.SCENE.sceneDuration, sceneCues: window.SCENE.sceneCues }));
+  if (metaOnly) { console.log(JSON.stringify(meta)); process.exit(0); }
   const frames = Math.round(meta.duration * fps);
 
   const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', '-',

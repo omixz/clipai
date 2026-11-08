@@ -56,6 +56,14 @@ BANK: dict[str, list[list[str]]] = {
         ["cancelling should be easy.", "ours is one click."],
         ["fine print is a feature.", "so we left it out."],
     ],
+    "growth": [
+        ["one video a week.", "seven posts a week."],
+        ["record once.", "show up every day."],
+        ["consistency compounds.", "clips make it effortless."],
+        ["same recording.", "seven chances to be found."],
+        ["you don't need more content.", "you need more clips of it."],
+        ["the people who grow post daily.", "now you can too."],
+    ],
     "computer": [
         ["your computer is idle tonight.", "let it make the clips."],
         ["you already own a gpu.", "put it to work."],
@@ -73,11 +81,12 @@ CAPTIONS: dict[str, list[str]] = {
     "split": ["one long video in, captioned vertical clips out.", "record once, post everywhere."],
     "credits": ["no credits, no expiry, cancel in one click.", "a plain number of videos a month. that's it."],
     "computer": ["process clips on your own computer or gpu.", "pair your pc. upload from anywhere."],
+    "growth": ["one long video a week becomes a week of daily posts.", "show up every day without recording every day."],
 }
 CTAS = ["5 free videos a month. link in bio.", "try it free, link in bio.", "free to try — link in bio."]
 
 HASHTAGS = {
-    "tiktok": "#contentcreator #podcastclips #shortsform #videoediting #minimal",
+    "tiktok": "#contentcreator #podcastclips #creatortips #videoediting #minimal",
     "instagram": "#contentcreator #podcastclips #reels #videoediting #creatortools #minimaldesign #podcasting",
 }
 
@@ -86,6 +95,11 @@ BANNED = [
     r"\bbest\b(?! part| minute| moments?)", r"#1", r"\bnumber one\b", r"\bguarantee", r"\bviral\b", r"\bmillions?\b",
     r"\bunlimited\b", r"\bforever\b", r"\bopus\b", r"\bklap\b", r"\bvizard\b", r"\bsubmagic\b", r"\bcapcut\b",
     r"\bscam\b", r"\bsecret\b", r"\bhack\b", r"\bai\b", r"\bfree\b", r"\binstantly\b", r"\bseconds?\b(?! to)",
+    # No money/income promises: they're false for a clipping tool, illegal as
+    # unsubstantiated earnings claims, and get-rich content is against TikTok
+    # and Instagram rules (reach throttled, account at risk).
+    r"\brich\b", r"\bmoney\b", r"\bincome\b", r"\bcash\b", r"\bearn", r"\bprofit", r"\bpassive\b",
+    r"\bmillionaire", r"\bwealth", r"\bpaid\b", r"\bdollars?\b", r"\bsalary\b", r"\bquit your job\b",
 ]
 _BANNED_RE = re.compile("|".join(BANNED), re.IGNORECASE)
 ALLOWED_NUMBER_WORDS = ("forty seconds",)
@@ -135,6 +149,7 @@ MOTIF_BRIEF = {
     "split": "one long video becomes several captioned vertical clips",
     "credits": "no credits that expire, a plain number of videos per month, one-click cancel",
     "computer": "you can process clips on your own computer or gpu instead of the cloud",
+    "growth": "one long video becomes a week of daily posts, so you can be consistent and show up every day",
 }
 
 
@@ -207,15 +222,38 @@ def pick(ledger: list[dict], motif: str | None = None, seed: int | None = None, 
         lines = min(pairs, key=lambda p: used.get(tuple(p), -1))
         ai_written = lines not in BANK[motif]
     caption = rng.choice(CAPTIONS[motif])
+    # gold for the growth story (the "momentum" look), otherwise mostly dark
+    # with every third post light so the grid doesn't look repetitive
+    theme = "gold" if motif == "growth" else ("light" if len(ledger) % 3 == 2 else "dark")
     return {
         "motif": motif,
         "lines": lines,
-        "light": len(ledger) % 3 == 2,
+        "theme": theme,
+        "light": theme == "light",
         "caption": caption,
         "cta": rng.choice(CTAS),
         "ai_written": ai_written,
     }
 
 
+HASHTAGS_FILE = HERE / "state" / "hashtags.json"
+
+
+def hashtags(platform: str) -> str:
+    """Built-in tags, or your own current ones from state/hashtags.json
+    ({"tiktok": "#a #b", "instagram": "#c"}) — edit that file any time
+    a tag is trending in your niche; the next post picks it up."""
+    try:
+        custom = json.loads(HASHTAGS_FILE.read_text()).get(platform)
+        if custom and isinstance(custom, str):
+            return custom[:400]
+    except Exception:
+        pass
+    return HASHTAGS[platform]
+
+
 def post_text(choice: dict, platform: str) -> str:
-    return f"{choice['caption']}\n\n{choice['cta']}\n\n{HASHTAGS[platform]}"
+    if platform == "instagram":
+        # hashtags go in the first comment on Instagram (see publish.py)
+        return f"{choice['caption']}\n\n{choice['cta']}"
+    return f"{choice['caption']}\n\n{choice['cta']}\n\n{hashtags(platform)}"

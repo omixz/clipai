@@ -30,6 +30,9 @@ import os
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_REPLACE_ME")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "price_REPLACE_ME")
 STRIPE_PRICE_ID_PLUS = os.environ.get("STRIPE_PRICE_ID_PLUS", "price_REPLACE_ME_PLUS")
+# Optional add-on: unlocks "process on my own computer" without Pro. Create a
+# recurring price in Stripe and set this; leave empty to make it Pro-only.
+STRIPE_PRICE_ID_HARDWARE = os.environ.get("STRIPE_PRICE_ID_HARDWARE", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_REPLACE_ME")
 ADSENSE_PUBLISHER_ID = os.environ.get("ADSENSE_PUBLISHER_ID", "ca-pub-5158161193547085")
 
@@ -92,3 +95,7 @@ WORKER_TOKEN = os.environ.get("WORKER_TOKEN", "")
 # bounds storage for the finished clips.
 OWN_DEVICE_DAILY_LIMIT = int(os.environ.get("OWN_DEVICE_DAILY_LIMIT", "30"))
 MAX_DEVICES_PER_USER = 3
+
+# Where the "Auto-post with Buffer" buttons send people. Swap in your Buffer
+# affiliate/referral link to earn from it.
+BUFFER_URL = os.environ.get("BUFFER_URL", "https://publish.buffer.com")

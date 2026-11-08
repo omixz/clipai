@@ -36,13 +36,16 @@ def main():
         out.append("**BUFFER_API_KEY is not set.** Create a Buffer account, connect TikTok and Instagram (a Business or "
                    "Creator account), create an API key and add it as the repo secret `BUFFER_API_KEY`.")
     else:
-        for q in ("{ account { organizations { id name channels { id name service } } } }", "{ channels { id name service } }"):
-            code, data = gql(q)
-            out += [f"### Channels (`{q[:40]}…`) → HTTP {code}", "```json", json.dumps(data, indent=1)[:3000], "```"]
-            if code == 200 and not data.get("errors"):
-                break
-        out.append("Copy the TikTok channel id into `BUFFER_TIKTOK_CHANNEL_ID` and the Instagram one into `BUFFER_INSTAGRAM_CHANNEL_ID`.")
-        for t in ("PostInputMetaData", "TiktokPostMetadataInput", "InstagramPostMetadataInput"):
+        code, data = gql("{ account { organizations { id name } } }")
+        orgs = ((data.get("data") or {}).get("account") or {}).get("organizations") or []
+        out.append(f"### Organizations → HTTP {code}: " + ", ".join(o["name"] for o in orgs))
+        out.append("| service | name | channel id |\n|---|---|---|")
+        for org in orgs:
+            code, data = gql('{ channels(input: {organizationId: "%s"}) { id name service } }' % org["id"])
+            for ch in (data.get("data") or {}).get("channels") or []:
+                out.append(f"| {ch['service']} | {ch['name']} | `{ch['id']}` |")
+        out.append("\nThe autopilot finds these automatically; set `BUFFER_TIKTOK_CHANNEL_ID` / `BUFFER_INSTAGRAM_CHANNEL_ID` only to pick a different channel.")
+        for t in ("TikTokPostMetadataInput", "InstagramPostMetadataInput"):
             code, data = gql(f'{{ __type(name: "{t}") {{ inputFields {{ name type {{ name kind ofType {{ name }} }} }} }} }}')
             out += [f"### `{t}` fields", "```json", json.dumps(data, indent=1)[:1500], "```"]
         if "--probe" in sys.argv:
@@ -55,9 +58,6 @@ def main():
                 url = publish.host_on_github_release(clip, "probe.mp4")
                 out.append(f"- hosted at {url}")
                 for platform in ("tiktok", "instagram"):
-                    if not os.environ.get(f"BUFFER_{platform.upper()}_CHANNEL_ID"):
-                        out.append(f"- {platform}: channel id secret not set, skipped")
-                        continue
                     try:
                         pid = publish.post_video(platform, url, "probe — safe to delete", "probe", draft=True)
                         out.append(f"- ✅ {platform}: draft `{pid}` saved — delete it in Buffer")

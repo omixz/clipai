@@ -92,6 +92,14 @@
     <div class="section" id="computers">
       <h2>Your computers</h2>
       <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Let your own PC (or GPU) make the clips. Pick <strong>My computer</strong> when uploading and it does the transcription and rendering — those videos don't use your monthly allowance (up to <span id="ownDaily">30</span> a day). Upload from your phone; your computer at home does the work.</p>
+      <div id="hwLocked" style="display:none" class="notice">
+        <strong>🔒 Included with Pro and Pro Plus.</strong> Don't need Pro? <span id="hwAddon">Unlock just this feature on its own.</span>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <a class="primary" href="/pricing" style="display:inline-block;text-decoration:none;padding:10px 18px;border-radius:999px;background:var(--accent);color:#fff;font-weight:700">See Pro</a>
+          <a id="hwAddonBtn" href="/create-checkout-session-hardware" style="display:inline-block;text-decoration:none;padding:10px 18px;border-radius:999px;border:2px solid var(--accent);color:var(--accent);font-weight:700">Unlock own hardware — $5/mo</a>
+        </div>
+      </div>
+      <div id="hwControls">
       <div id="devicesList"></div>
       <div class="form-group" style="margin-top:12px">
         <label for="deviceName">Computer name</label>
@@ -109,6 +117,13 @@
         <button class="secondary" onclick="navigator.clipboard.writeText(document.getElementById('pairCmd').textContent).then(()=>this.textContent='✓ Copied')">Copy command</button>
         <p style="font-size:0.8rem;color:var(--muted)">NVIDIA GPUs, Intel Quick Sync, AMD and Apple Silicon are used automatically when available. Prefer no account at all? <code>python peakcut_worker.py --local video.mp4</code> works fully offline.</p>
       </div>
+      </div>
+    </div>
+
+    <div class="section" id="autopost">
+      <h2>Auto-posting</h2>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0;">Schedule your clips to TikTok, Instagram Reels and YouTube Shorts automatically with Buffer (free plan available). Every clip has an <strong>🗓 Auto-post</strong> button that saves the clip, copies its title and hashtags, and opens Buffer.</p>
+      <a id="bufferLink" class="primary" href="https://publish.buffer.com" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;padding:10px 18px;border-radius:999px;background:var(--accent);color:#fff;font-weight:700">Open Buffer ↗</a>
     </div>
 
     <div id="watermarkSection" style="display:none;">
@@ -239,6 +254,10 @@
         }
         document.getElementById('ownDaily').textContent = data.own_daily_limit;
         renderDevices(data.devices || []);
+        document.getElementById('hwLocked').style.display = data.own_hardware ? 'none' : 'block';
+        document.getElementById('hwControls').style.display = data.own_hardware ? '' : 'none';
+        if (!data.hardware_addon_available) { document.getElementById('hwAddonBtn').style.display = 'none'; document.getElementById('hwAddon').textContent = ''; }
+        if (data.buffer_url) document.getElementById('bufferLink').href = data.buffer_url;
         loadApiKeys(data);
         loadPresets();
       } catch (e) {

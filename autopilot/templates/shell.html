@@ -5,6 +5,8 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root { --bg: #000; --fg: #f4f4f4; --soft: #9a9a9a; }
 .light { --bg: #fff; --fg: #111; --soft: #6b6b6b; }
+/* "gold": the same minimal look, warmer — champagne lines on black */
+.gold { --bg: #050505; --fg: #e6cf9a; --soft: #9c8a62; }
 html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--bg); }
 #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: var(--bg); }
 /* one quiet lowercase line, inside TikTok/Reels' top safe area */
@@ -36,16 +38,42 @@ svg { position: absolute; left: 0; top: 0; }
 (function () {
   const spec = __SPEC__;
   const K = window.Peakcut;
-  if (spec.light) document.documentElement.classList.add('light');
+  if (spec.theme === 'light' || spec.light) document.documentElement.classList.add('light');
+  if (spec.theme === 'gold') document.documentElement.classList.add('gold');
   const sc = window.SCENE_FACTORY(spec, K);
   const cap = K.caption(spec.lines, sc.swapAt);
   const end = K.endcard(sc.body, spec.cta);
   const dot = document.getElementById('dot');
   let last = [540, 1040, 22];
+  const sceneDuration = sc.body + end.duration;
+  const sceneCues = [...sc.cues, sc.body + .7];
+  // Optional beat-sync: piecewise-linear map from video time to scene time,
+  // so the scene's hits land on the music's beats (anchors from music.py).
+  const W = spec.warp && spec.warp.length > 1 ? spec.warp : null;
+  const toScene = v => {
+    if (!W) return v;
+    for (let i = 1; i < W.length; i++) if (v <= W[i][0]) {
+      const [v0, s0] = W[i - 1], [v1, s1] = W[i];
+      return s0 + (v - v0) * (s1 - s0) / (v1 - v0);
+    }
+    const [vl, sl] = W[W.length - 1];
+    return sl + (v - vl);
+  };
+  const toVideo = s => {
+    if (!W) return s;
+    for (let i = 1; i < W.length; i++) if (s <= W[i][1]) {
+      const [v0, s0] = W[i - 1], [v1, s1] = W[i];
+      return v0 + (s - s0) * (v1 - v0) / (s1 - s0);
+    }
+    const [vl, sl] = W[W.length - 1];
+    return vl + (s - sl);
+  };
   window.SCENE = {
-    duration: sc.body + end.duration,
-    cues: [...sc.cues, sc.body + .7],
-    render(t) {
+    sceneDuration, sceneCues,
+    duration: toVideo(sceneDuration),
+    cues: sceneCues.map(toVideo),
+    render(v) {
+      const t = toScene(v);
       cap(t);
       let d = sc.render(t);
       if (t < sc.body) last = d;

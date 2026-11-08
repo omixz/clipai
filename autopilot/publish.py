@@ -5,10 +5,13 @@ live Buffer account:
   file is attached to a rolling "marketing-media" GitHub Release of this
   public repo (free; assets pruned after 14 days).
 * Buffer's GraphQL createPost publishes it to the connected TikTok and
-  Instagram channels. Like YT-AUTO, each post tries a few input shapes (with
-  and without platform metadata, shareNow then addToQueue) so one rejected
-  optional field can't block the post. Run autopilot/buffer_check.py to see
-  exactly which fields your account's schema accepts.
+  Instagram channels. Field names below were confirmed by introspecting the
+  live schema (Nov 2026): Instagram needs metadata.instagram.type ("reel")
+  and shouldShareToFeed; TikTok takes title + isAiGenerated. Each post still
+  falls back through a couple of shapes so one rejected optional field can't
+  block it.
+* schedulingType "notification" = Buffer pings your phone to publish by hand,
+  which is how a trending in-app sound gets added (TIKTOK_TREND_HANDOFF=1).
 """
 from __future__ import annotations
 
@@ -70,25 +73,59 @@ def _create_post(post_input: dict, api_key: str) -> tuple[str | None, str]:
     return None, str(data.get("errors") or result.get("message") or data)[:400]
 
 
-def metadata_variants(platform: str, title: str, ai_generated: bool) -> list[dict | None]:
+def metadata_variants(platform: str, title: str, ai_generated: bool, first_comment: str = "") -> list[dict | None]:
     if platform == "tiktok":
         return [{"tiktok": {"title": title[:90], "isAiGenerated": ai_generated}}, None]
     if platform == "instagram":
-        return [{"instagram": {"type": "reel", "shouldShareToFeed": True}}, {"instagram": {"type": "reel"}}, None]
+        full = {"type": "reel", "shouldShareToFeed": True, "isAiGenerated": ai_generated}
+        if first_comment:
+            full["firstComment"] = first_comment[:2000]
+        return [{"instagram": full}, {"instagram": {"type": "reel", "shouldShareToFeed": True}}]
     return [None]
 
 
+_channel_cache: dict = {}
+
+
+def discover_channel(platform: str, api_key: str) -> str | None:
+    """Finds the channel id for `platform` from the account itself, so the
+    *_CHANNEL_ID secrets are optional (they win if set)."""
+    if platform in _channel_cache:
+        return _channel_cache[platform]
+
+    def gql(q):
+        r = requests.post(BUFFER_API, timeout=60, json={"query": q},
+                          headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+        r.raise_for_status()
+        return r.json().get("data") or {}
+
+    try:
+        orgs = (gql("{ account { organizations { id } } }").get("account") or {}).get("organizations") or []
+        for org in orgs:
+            chans = gql('{ channels(input: {organizationId: "%s"}) { id service } }' % org["id"]).get("channels") or []
+            for ch in chans:
+                _channel_cache.setdefault(ch["service"], ch["id"])
+    except Exception as e:  # noqa: BLE001
+        print(f"[autopilot] channel discovery failed: {e}")
+    return _channel_cache.get(platform)
+
+
 def post_video(platform: str, video_url: str, text: str, title: str, ai_generated: bool = False,
-               draft: bool = False) -> str:
-    """Posts to the Buffer channel for `platform`; returns Buffer's post id."""
+               draft: bool = False, handoff: bool = False, first_comment: str = "") -> str:
+    """Posts to the Buffer channel for `platform`; returns Buffer's post id.
+    handoff=True uses Buffer's notification publishing: you get a push, open
+    the app, add a trending sound and post."""
     api_key = os.environ.get("BUFFER_API_KEY")
-    channel = os.environ.get(f"BUFFER_{platform.upper()}_CHANNEL_ID")
-    if not (api_key and channel):
-        raise RuntimeError(f"BUFFER_API_KEY and BUFFER_{platform.upper()}_CHANNEL_ID must be set to post to {platform}.")
+    if not api_key:
+        raise RuntimeError(f"BUFFER_API_KEY must be set to post to {platform}.")
+    channel = os.environ.get(f"BUFFER_{platform.upper()}_CHANNEL_ID") or discover_channel(platform, api_key)
+    if not channel:
+        raise RuntimeError(f"No {platform} channel is connected to this Buffer account (or set BUFFER_{platform.upper()}_CHANNEL_ID).")
     errors = []
     for mode in ("shareNow", "addToQueue"):
-        for meta in metadata_variants(platform, title, ai_generated):
-            post_input = {"text": text[:2200], "channelId": channel, "schedulingType": "automatic",
+        for meta in metadata_variants(platform, title, ai_generated, first_comment):
+            post_input = {"text": text[:2200], "channelId": channel,
+                          "schedulingType": "notification" if handoff else "automatic",
                           "mode": mode, "needsApproval": False, "assets": [{"video": {"url": video_url}}]}
             if meta:
                 post_input["metadata"] = meta

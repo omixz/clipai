@@ -208,7 +208,7 @@
         <div class="device-row" id="deviceRow">
           <span class="device-label">Process on</span>
           <label class="seg"><input type="radio" name="device" value="cloud" checked><span>☁️ Peakcut cloud</span></label>
-          <label class="seg"><input type="radio" name="device" value="own"><span>💻 My computer</span></label>
+          <label class="seg"><input type="radio" name="device" value="own"><span>💻 My computer <span class="pro-tag" id="hwLock" style="display:none">Pro</span></span></label>
           <span class="device-hint" id="deviceHint"></span>
         </div>
         <div class="options">
@@ -329,7 +329,8 @@
       <details><summary>What happens to my video?</summary><p>It's only used to make your clips. The upload is deleted as soon as clips are rendered; clips are deleted after 24 hours, so download them. You can wipe everything from Settings at any time.</p></details>
       <details><summary>Do unused videos roll over? Do credits expire?</summary><p>There are no credits to expire. Your allowance resets on the 1st of each month (UTC). If a video fails to process, it doesn't count.</p></details>
       <details><summary>How do I cancel?</summary><p>Settings → Manage billing. Stripe's portal lets you cancel, switch plans, update your card or download invoices instantly. Your plan stays active until the end of the period you paid for.</p></details>
-      <details><summary>Can I use my own computer or GPU?</summary><p>Yes. Pair a computer in Settings → Your computers and run the small Peakcut worker on it. Then choose "My computer" when uploading: your PC does the transcription and rendering (on an NVIDIA GPU or Apple Silicon automatically), and those videos don't use your monthly allowance. You can upload from your phone while your PC at home does the work. The worker also runs fully offline with no upload at all.</p></details>
+      <details><summary>Can I auto-post my clips?</summary><p>Yes — hit "Auto-post" on any clip: it saves the clip, copies the title and hashtags, and opens <a href="https://buffer.com" target="_blank" rel="noopener">Buffer</a>, which can publish to TikTok, Instagram Reels and YouTube Shorts on a schedule (it has a free plan).</p></details>
+      <details><summary>Can I use my own computer or GPU?</summary><p>Yes, on Pro and Pro Plus (or as a standalone add-on). Pair a computer in Settings → Your computers and run the small Peakcut worker on it. Then choose "My computer" when uploading: your PC does the transcription and rendering (on an NVIDIA GPU or Apple Silicon automatically), and those videos don't use your monthly allowance. You can upload from your phone while your PC at home does the work. The worker also runs fully offline with no upload at all.</p></details>
       <details><summary>Can I edit the captions?</summary><p>Yes — each clip comes with an .srt file. Import it with the clip into CapCut, Premiere, DaVinci Resolve or YouTube Studio.</p></details>
       <details><summary>Can I dub my clips into another language?</summary><p>Pro plans can dub English videos into Spanish, French or Portuguese — speech is translated and re-voiced, and captions are translated too.</p></details>
     </section>
@@ -359,6 +360,11 @@
       fillClipCount(own ? 8 : ((usage && usage.max_clips) || 3));
       if (!own) {
         hint.innerHTML = '';
+        return;
+      }
+      if (usage && !usage.own_hardware) {
+        hint.innerHTML = 'Let your own PC or GPU make the clips, without using your monthly videos. Included with <a href="/pricing">Pro</a>' +
+          (usage.hardware_addon_available ? ', or <a href="/create-checkout-session-hardware">unlock it on its own</a>.' : '.');
         return;
       }
       const devices = (usage && usage.devices) || [];
@@ -448,6 +454,7 @@
         }
 
         notifyRow.style.display = data.email_configured ? '' : 'none';
+        $('hwLock').style.display = data.own_hardware ? 'none' : 'inline-block';
         updateDeviceHint();
 
         const badge = $('quotaBadgeContainer');
@@ -563,6 +570,10 @@
 
     processBatchBtn.addEventListener('click', async () => {
       if (!fileQueue.length) return;
+      if (selectedDevice() === 'own' && usage && !usage.own_hardware) {
+        statusEl.innerHTML = 'Processing on your own computer is a Pro feature — <a href="/pricing">see plans</a>, or switch to Peakcut cloud.';
+        return;
+      }
       processBatchBtn.disabled = true;
       paywall.style.display = 'none';
       statusEl.textContent = '';
@@ -666,7 +677,9 @@
 
     function renderClips(card, data, jobId) {
       const expires = new Date(data.expires_at * 1000);
-      card.el.querySelector('.zip').innerHTML = `<a class="btn" href="/jobs/${encodeURIComponent(jobId)}/download/all">📦 Download all (.zip)</a>`;
+      const bufferUrl = (usage && usage.buffer_url) || 'https://publish.buffer.com';
+      card.el.querySelector('.zip').innerHTML = `<a class="btn" href="/jobs/${encodeURIComponent(jobId)}/download/all">📦 Download all (.zip)</a>
+        <a class="btn ghost" href="${encodeURI(bufferUrl)}" target="_blank" rel="noopener" title="Schedule these to TikTok, Reels and Shorts automatically">🗓 Auto-post with Buffer ↗</a>`;
       const clipsEl = card.el.querySelector('.clips');
       clipsEl.innerHTML = data.clips.map((c, idx) => `
         <div class="clip-card">
@@ -681,6 +694,7 @@
               <a class="btn" href="${encodeURI(c.url)}?download=1" download>⬇ Download</a>
               <button class="btn accent" data-share="${idx}">Share</button>
               <button class="btn ghost" data-copy="${idx}">Copy caption</button>
+              <button class="btn ghost" data-buffer="${idx}" title="Downloads the clip, copies the caption and opens Buffer so you can schedule it to TikTok, Reels and Shorts">🗓 Auto-post</button>
               ${c.srt_url ? `<a class="btn ghost" href="${encodeURI(c.srt_url)}" download>Captions (.srt)</a>` : ''}
             </div>
           </div>
@@ -691,6 +705,18 @@
       // Handlers are attached in JS (never via inline attributes) because
       // clip text comes from the transcript and could contain quotes.
       const captionFor = (c) => `${c.title || ''}\n\n${(c.hashtags || []).join(' ')}`.trim();
+      // Buffer doesn't accept a video link from another site, so: save the
+      // clip, put the caption on the clipboard, open Buffer's composer.
+      clipsEl.querySelectorAll('[data-buffer]').forEach(btn => {
+        const c = data.clips[Number(btn.dataset.buffer)];
+        btn.addEventListener('click', async () => {
+          window.open(bufferUrl, '_blank', 'noopener');
+          const a = document.createElement('a');
+          a.href = c.url + '?download=1'; a.download = c.file; document.body.appendChild(a); a.click(); a.remove();
+          try { await navigator.clipboard.writeText(captionFor(c)); } catch (e) {}
+          flash(btn, '✓ Clip saved + caption copied — drop it into Buffer');
+        });
+      });
       clipsEl.querySelectorAll('[data-copy]').forEach(btn => {
         const c = data.clips[Number(btn.dataset.copy)];
         btn.addEventListener('click', async () => {

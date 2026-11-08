@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import content, video
+from . import content, music, video
 
 HERE = Path(__file__).resolve().parent
 LEDGER = HERE / "state" / "ledger.json"
@@ -56,6 +56,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=str(HERE / "out"))
     ap.add_argument("--force", action="store_true", help="post even if the last post was under 3h ago")
     ap.add_argument("--draft", action="store_true", help="save as Buffer drafts instead of publishing")
+    ap.add_argument("--trend-handoff", action="store_true", default=os.environ.get("TIKTOK_TREND_HANDOFF") == "1",
+                    help="TikTok: Buffer pings your phone so you can add a trending sound before posting")
     args = ap.parse_args(argv)
 
     platforms = [p.strip() for p in args.platforms.split(",") if p.strip() in PLATFORMS]
@@ -73,11 +75,13 @@ def main(argv=None) -> int:
     out = Path(args.out) / run_id
     mp4 = out / "reel.mp4"
     t0 = time.time()
-    video.render({"motif": choice["motif"], "lines": choice["lines"], "light": choice["light"], "cta": "link in bio"},
-                 mp4, out / "work")
+    track = music.pick_track([p.get("track") for p in ledger if p.get("track")])
+    meta = video.render({"motif": choice["motif"], "lines": choice["lines"], "theme": choice.get("theme"), "cta": "link in bio"},
+                        mp4, out / "work", music_track=track, quiet_variant=args.trend_handoff and "tiktok" in platforms)
     video.contact_sheet(mp4, out / "sheet.jpg")
+    sound = f"🎵 {meta['track']} ({meta['bpm']:.0f} bpm, beat-synced)" if meta.get("track") else "🎵 synth pad (add tracks to autopilot/assets/music/)"
     summary(f"## 🎬 {choice['motif']} — “{' / '.join(choice['lines'])}”\n"
-            f"rendered in {time.time() - t0:.0f}s · {'light' if choice['light'] else 'dark'}"
+            f"rendered in {time.time() - t0:.0f}s · {choice.get('theme', 'dark')} · {sound}"
             f"{' · lines written by Gemini' if choice['ai_written'] else ''}\n")
 
     if args.dry_run:
@@ -85,11 +89,15 @@ def main(argv=None) -> int:
         return 0
 
     from . import publish
-    record = {"at": now.isoformat(timespec="seconds"), "id": run_id, **{k: choice[k] for k in ("motif", "lines", "light", "caption", "ai_written")},
-              "platforms": {}}
+    record = {"at": now.isoformat(timespec="seconds"), "id": run_id,
+              **{k: choice.get(k) for k in ("motif", "lines", "theme", "caption", "ai_written")},
+              "track": meta.get("track"), "platforms": {}}
     try:
         url = publish.host_on_github_release(mp4, f"{run_id}.mp4")
         record["video_url"] = url
+        quiet_url = None
+        if meta.get("quiet_path"):
+            quiet_url = publish.host_on_github_release(Path(meta["quiet_path"]), f"{run_id}.quiet.mp4")
     except Exception as e:  # noqa: BLE001
         summary(f"❌ Hosting failed: {e}")
         return 1
@@ -97,10 +105,14 @@ def main(argv=None) -> int:
     ok = 0
     for platform in platforms:
         try:
-            post_id = publish.post_video(platform, url, content.post_text(choice, platform), title=choice["caption"],
-                                         ai_generated=choice["ai_written"], draft=args.draft)
-            record["platforms"][platform] = {"ok": True, "post_id": post_id}
-            summary(f"- ✅ {platform}: Buffer post `{post_id}`")
+            handoff = platform == "tiktok" and args.trend_handoff
+            post_id = publish.post_video(
+                platform, (quiet_url or url) if handoff else url, content.post_text(choice, platform),
+                title=choice["caption"], ai_generated=choice["ai_written"], draft=args.draft, handoff=handoff,
+                first_comment=content.hashtags("instagram") if platform == "instagram" else "")
+            record["platforms"][platform] = {"ok": True, "post_id": post_id, "handoff": handoff}
+            summary(f"- ✅ {platform}: Buffer post `{post_id}`"
+                    + (" — check your phone: add a trending sound and publish" if handoff else ""))
             ok += 1
         except Exception as e:  # noqa: BLE001 — one platform failing must not block the other
             record["platforms"][platform] = {"ok": False, "error": str(e)[:500]}

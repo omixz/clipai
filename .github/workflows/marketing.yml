@@ -4,9 +4,11 @@ name: Marketing autopilot
 # twice a day, with no one involved. State (what was posted) is committed back
 # to autopilot/state/ so it never repeats itself across runs.
 #
-# Needs repo secrets: BUFFER_API_KEY, BUFFER_TIKTOK_CHANNEL_ID,
-# BUFFER_INSTAGRAM_CHANNEL_ID. Optional: GEMINI_API_KEY (fresh lines once the
-# built-in bank is used up). Run "Marketing setup check" first.
+# Needs one repo secret: BUFFER_API_KEY (channels are found automatically).
+# Optional: GEMINI_API_KEY (fresh lines once the built-in bank is used up),
+# BUFFER_TIKTOK_CHANNEL_ID / BUFFER_INSTAGRAM_CHANNEL_ID (to pick specific
+# channels), and the repo *variable* TIKTOK_TREND_HANDOFF=1 (TikTok posts come
+# to your phone so you can add a trending sound). Run "Marketing setup check" first.
 on:
   schedule:
     # ~11:17 and ~19:43 US Eastern, two strong windows for short-form video
@@ -22,7 +24,7 @@ on:
         description: "Force a motif"
         type: choice
         default: auto
-        options: [auto, sentence, cut, waveform, split, credits, computer]
+        options: [auto, growth, sentence, cut, waveform, split, credits, computer]
       platforms:
         description: "Where to post"
         type: choice
@@ -30,6 +32,10 @@ on:
         options: ["tiktok,instagram", "tiktok", "instagram"]
       force:
         description: "Post even if the last post was under 3 hours ago"
+        type: boolean
+        default: false
+      trend_handoff:
+        description: "TikTok: send to my phone so I can add a trending sound"
         type: boolean
         default: false
 
@@ -61,7 +67,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npm install --prefix autopilot --no-audit --no-fund
           npx --prefix autopilot playwright install --with-deps chromium
-          pip install requests
+          pip install requests numpy
 
       - name: Make and post a reel
         id: run
@@ -70,6 +76,7 @@ jobs:
           BUFFER_TIKTOK_CHANNEL_ID: ${{ secrets.BUFFER_TIKTOK_CHANNEL_ID }}
           BUFFER_INSTAGRAM_CHANNEL_ID: ${{ secrets.BUFFER_INSTAGRAM_CHANNEL_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TIKTOK_TREND_HANDOFF: ${{ (inputs.trend_handoff || vars.TIKTOK_TREND_HANDOFF == '1') && '1' || '0' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ARGS=""
