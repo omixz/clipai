@@ -117,10 +117,26 @@ def track_beats(env: np.ndarray, period: float, duration: float) -> np.ndarray:
 
 
 def analyze(path: Path) -> dict:
+    """Tempo, beats and per-beat loudness. A sidecar <track>.json with
+    {"bpm": ...} (written for generated beats) skips the tempo guess."""
     y = decode(path)
     env = onset_envelope(y)
-    period = estimate_period(env)
+    period = grid_start = None
+    sidecar = Path(str(path) + ".json")
+    if sidecar.exists():
+        try:
+            import json
+            meta = json.loads(sidecar.read_text())
+            period = 60.0 / float(meta["bpm"])
+            grid_start = float(meta.get("first_beat", 0.0))
+        except Exception:
+            period = grid_start = None
+    period = period or estimate_period(env)
     duration = len(y) / SR
+    if grid_start is not None:  # generated track: the grid is known exactly
+        beats = np.arange(grid_start, duration, period)
+        rms = np.array([np.sqrt(np.mean(y[int(b * SR):int((b + period) * SR)] ** 2) + 1e-12) for b in beats])
+        return {"path": str(path), "bpm": round(float(60 / period), 1), "period": period, "beats": beats, "rms": rms, "duration": duration}
     beats = track_beats(env, period, duration)
     # Hi-hats often make the off-beats the loudest onsets. The kick/bass
     # decides where the beat really is: if the low end hits harder half a
