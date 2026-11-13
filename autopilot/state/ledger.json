@@ -27,6 +27,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261111-0116-waveform.mp4"
+  },
+  {
+   "at": "2026-11-13T01:51:20+00:00",
+   "id": "20261113-0151-split",
+   "motif": "editorial",
+   "script": "consistency",
+   "lines": [
+    "the most consistent creators win."
+   ],
+   "theme": "editorial",
+   "caption": "the most consistent creators win.",
+   "ai_written": false,
+   "track": "generated-house",
+   "voice": "en-US-AndrewMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6af66dc65ec1c9d5be522709",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6af66dd1c1a0010a5bf015a9",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261113-0151-split.mp4"
   }
  ]
 }
