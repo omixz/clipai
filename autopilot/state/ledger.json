@@ -55,6 +55,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261113-0151-split.mp4"
+  },
+  {
+   "at": "2026-11-13T17:46:27+00:00",
+   "id": "20261113-1746-split",
+   "motif": "editorial",
+   "script": "mid-sentence",
+   "lines": [
+    "the clip that ends mid-sentence."
+   ],
+   "theme": "editorial",
+   "caption": "the clip that ends mid-sentence.",
+   "ai_written": false,
+   "track": "generated-lofi",
+   "voice": "en-US-BrianMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6af74d80357fdb912a6e0f80",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6af74d8a5bbd7cc6dbc44fd8",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261113-1746-split.mp4"
   }
  ]
 }
