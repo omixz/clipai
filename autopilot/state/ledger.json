@@ -83,6 +83,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261113-1746-split.mp4"
+  },
+  {
+   "at": "2026-11-13T23:36:15+00:00",
+   "id": "20261113-2336-credits",
+   "motif": "editorial",
+   "script": "first-second",
+   "lines": [
+    "the first second decides everything."
+   ],
+   "theme": "editorial",
+   "caption": "the first second decides everything.",
+   "ai_written": false,
+   "track": "generated-phonk",
+   "voice": "en-US-ChristopherNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6af79f4b78196a0a972aab2b",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6af79f55d16af15d4dde0107",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261113-2336-credits.mp4"
   }
  ]
 }
