@@ -111,6 +111,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261113-2336-credits.mp4"
+  },
+  {
+   "at": "2026-11-15T17:44:01+00:00",
+   "id": "20261115-1744-split",
+   "motif": "editorial",
+   "script": "gpu",
+   "lines": [
+    "your computer sleeps every night."
+   ],
+   "theme": "editorial",
+   "caption": "your computer sleeps every night.",
+   "ai_written": false,
+   "track": "generated-house",
+   "voice": "en-US-AndrewMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6af9efcdee359588b541993c",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6af9efd855ad64be5049fea3",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261115-1744-split.mp4"
   }
  ]
 }
