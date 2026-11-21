@@ -167,6 +167,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261121-1758-credits.mp4"
+  },
+  {
+   "at": "2026-11-21T23:18:41+00:00",
+   "id": "20261121-2318-waveform",
+   "motif": "editorial",
+   "script": "attention-myth",
+   "lines": [
+    "attention spans aren't short."
+   ],
+   "theme": "editorial",
+   "caption": "attention spans aren't short.",
+   "ai_written": false,
+   "track": "generated-phonk",
+   "voice": "en-US-BrianMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6b022745846b0ee90745cd0c",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6b022751d5eabfb8cc6a54c9",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261121-2318-waveform.mp4"
   }
  ]
 }
