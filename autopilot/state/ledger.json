@@ -139,6 +139,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261115-1744-split.mp4"
+  },
+  {
+   "at": "2026-11-21T17:58:56+00:00",
+   "id": "20261121-1758-credits",
+   "motif": "editorial",
+   "script": "credits",
+   "lines": [
+    "credits are a tax on creators."
+   ],
+   "theme": "editorial",
+   "caption": "credits are a tax on creators.",
+   "ai_written": false,
+   "track": "generated-lofi",
+   "voice": "en-US-AndrewMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6b01dc48142c95751932a9f3",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6b01dc53142c95751932ba37",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261121-1758-credits.mp4"
   }
  ]
 }
