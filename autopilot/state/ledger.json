@@ -195,6 +195,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261121-2318-waveform.mp4"
+  },
+  {
+   "at": "2026-11-22T15:19:44+00:00",
+   "id": "20261122-1519-split",
+   "motif": "editorial",
+   "script": "captions",
+   "lines": [
+    "most people watch on mute."
+   ],
+   "theme": "editorial",
+   "caption": "most people watch on mute.",
+   "ai_written": false,
+   "track": "generated-house",
+   "voice": "en-US-AndrewMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6b030881d864a01105d362ac",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6b03088ccc364169c163fa9f",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261122-1519-split.mp4"
   }
  ]
 }
