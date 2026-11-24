@@ -223,6 +223,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261122-1519-split.mp4"
+  },
+  {
+   "at": "2026-11-24T00:52:58+00:00",
+   "id": "20261124-0052-computer",
+   "motif": "editorial",
+   "script": "framing",
+   "lines": [
+    "stop cropping your guests out."
+   ],
+   "theme": "editorial",
+   "caption": "stop cropping your guests out.",
+   "ai_written": false,
+   "track": "generated-lofi",
+   "voice": "en-US-ChristopherNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6b04e0479a4bd32ca3e043f1",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6b04e052c43c1f2f5c76cb32",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261124-0052-computer.mp4"
   }
  ]
 }
