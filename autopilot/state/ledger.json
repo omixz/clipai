@@ -251,6 +251,34 @@
     }
    },
    "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261124-0052-computer.mp4"
+  },
+  {
+   "at": "2026-11-25T23:38:28+00:00",
+   "id": "20261125-2338-computer",
+   "motif": "editorial",
+   "script": "editor",
+   "lines": [
+    "you don't need an editor for this."
+   ],
+   "theme": "editorial",
+   "caption": "you don't need an editor for this.",
+   "ai_written": false,
+   "track": "generated-phonk",
+   "voice": "en-US-AndrewMultilingualNeural",
+   "footage_ids": [],
+   "platforms": {
+    "tiktok": {
+     "ok": true,
+     "post_id": "6b0771eed4eda4b659bdf0c0",
+     "handoff": false
+    },
+    "instagram": {
+     "ok": true,
+     "post_id": "6b0771f99f6dda31cca7a807",
+     "handoff": false
+    }
+   },
+   "video_url": "https://github.com/omixz/clipai/releases/download/marketing-media/20261125-2338-computer.mp4"
   }
  ]
 }
